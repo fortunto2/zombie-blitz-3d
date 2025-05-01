@@ -1,0 +1,9 @@
+This is a placeholder for the game screenshot.
+
+For a real implementation, capture a screenshot of the game showing:
+1. The player's weapon and HUD (health, score)
+2. Some zombies approaching
+3. The dog companion in action
+4. The 3D arena with obstacles
+
+Replace the "screenshot.png" reference in the README.md once you have a real screenshot. 
