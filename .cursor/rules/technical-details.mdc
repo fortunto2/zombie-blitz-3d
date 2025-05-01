@@ -1,0 +1,70 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Технические детали
+
+## Используемые технологии
+- React для пользовательского интерфейса
+- Three.js в качестве 3D-движка
+- React Three Fiber как связующий слой между React и Three.js
+- TypeScript для типизации
+
+## Основные интерфейсы
+
+### Player
+```typescript
+interface PlayerProps {
+  position: Vector3;
+  velocity: Vector3;
+  setPosition: (pos: Vector3) => void;
+  setVelocity: (vel: Vector3) => void;
+  isLocked: boolean;
+  isGameOver: boolean;
+  onZombieHit: (zombieId: string) => void;
+}
+```
+
+### Bullet
+```typescript
+interface BulletProps {
+  position: Vector3;
+  direction: Vector3;
+}
+
+interface BulletType {
+  id: string;
+  position: Vector3;
+  direction: Vector3;
+  hasHit: boolean;
+  createdAt: number;
+}
+```
+
+### Zombie
+```typescript
+interface ZombieData {
+  id: string;
+  position?: Vector3;
+  health: number;
+}
+
+interface Zombie {
+  id: string;
+  mesh: Group;
+  velocity: Vector3;
+  lastDamageTime: number;
+  health: number;
+  isDying: boolean;
+  dyingStartTime: number;
+  speed: number;
+  healthBar: Group;
+}
+```
+
+## Оптимизация
+- Использование UUID для идентификации объектов
+- Фильтрация по времени жизни для пуль
+- Использование Three.js группы для организации сложных объектов
+- Оптимизация коллизий с использованием Raycast

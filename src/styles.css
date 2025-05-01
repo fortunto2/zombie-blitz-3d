@@ -1,0 +1,305 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #000;
+  color: #fff;
+}
+
+/* Обновленные стили для интерфейса */
+.ui-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1000;
+  user-select: none;
+}
+
+.ui-container button {
+  pointer-events: auto;
+}
+
+.health-bar {
+  position: fixed;
+  bottom: 30px;
+  left: 30px;
+  width: 200px;
+  height: 20px;
+  background-color: rgba(0, 0, 0, 0.5);
+  border: 2px solid white;
+  z-index: 1001;
+}
+
+.health-bar-fill {
+  height: 100%;
+  background-color: crimson;
+}
+
+.score {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  font-size: 24px;
+  font-weight: bold;
+  color: white;
+  text-shadow: 1px 1px 2px black;
+  z-index: 1001;
+}
+
+.game-over {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(0, 0, 0, 0.8);
+  padding: 30px 50px;
+  border-radius: 5px;
+  text-align: center;
+  z-index: 1002;
+  pointer-events: auto;
+}
+
+.game-over h2 {
+  font-size: 36px;
+  margin-bottom: 20px;
+  color: white;
+}
+
+.game-over p {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: white;
+}
+
+.game-over button {
+  background-color: crimson;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.game-over button:hover {
+  background-color: #ff0033;
+}
+
+/* Обновленный прицел */
+.crosshair {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%);
+  z-index: 1001;
+  pointer-events: none;
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background-color: white;
+  box-shadow: 0 0 5px rgba(255, 255, 255, 0.8);
+}
+
+.crosshair::before {
+  width: 100%;
+  height: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.crosshair::after {
+  width: 2px;
+  height: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.pet-status {
+  position: fixed;
+  bottom: 60px;
+  left: 30px;
+  display: flex;
+  align-items: center;
+  color: white;
+  font-size: 16px;
+  text-shadow: 1px 1px 2px black;
+  z-index: 1001;
+}
+
+.pet-status .icon {
+  width: 20px;
+  height: 20px;
+  background-color: #8B4513;
+  margin-right: 10px;
+  border-radius: 50%;
+}
+
+/* Стили для главного меню */
+.menu-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.8);
+  z-index: 2000;
+}
+
+.menu {
+  background-color: rgba(20, 20, 20, 0.9);
+  padding: 40px;
+  border-radius: 10px;
+  text-align: center;
+  width: 400px;
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+}
+
+.menu h1 {
+  font-size: 36px;
+  margin-bottom: 10px;
+  color: crimson;
+}
+
+.menu p {
+  font-size: 18px;
+  margin-bottom: 30px;
+  color: #aaa;
+}
+
+.menu-options {
+  margin-bottom: 30px;
+}
+
+.option-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  margin-bottom: 15px;
+}
+
+.option-toggle input {
+  margin-right: 10px;
+}
+
+.start-button {
+  background-color: crimson;
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 5px;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.start-button:hover {
+  background-color: #ff0033;
+}
+
+.controls-info {
+  text-align: left;
+  background-color: rgba(0, 0, 0, 0.5);
+  padding: 15px;
+  border-radius: 5px;
+}
+
+.controls-info h3 {
+  margin-bottom: 10px;
+  color: #ddd;
+}
+
+.controls-info ul {
+  list-style-type: none;
+}
+
+.controls-info li {
+  margin-bottom: 5px;
+  color: #bbb;
+}
+
+/* Стили для меню паузы */
+.pause-menu-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 1500;
+}
+
+.pause-menu {
+  background-color: rgba(20, 20, 20, 0.9);
+  padding: 30px;
+  border-radius: 10px;
+  text-align: center;
+  width: 300px;
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
+}
+
+.pause-menu h2 {
+  font-size: 30px;
+  margin-bottom: 20px;
+  color: crimson;
+}
+
+.menu-button {
+  background-color: #444;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-bottom: 10px;
+  width: 100%;
+  display: block;
+}
+
+.menu-button:hover {
+  background-color: #666;
+}
+
+.menu-button:first-of-type {
+  background-color: #225;
+}
+
+.menu-button:first-of-type:hover {
+  background-color: #336;
+} 

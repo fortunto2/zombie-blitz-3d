@@ -1,0 +1,26 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Zombie Blitz: 3D FPS Game Structure
+
+Zombie Blitz - это шутер от первого лица с зомби, созданный на React Three Fiber.
+
+## Основные файлы
+
+- [index.html](mdc:index.html) - HTML точка входа
+- [src/main.tsx](mdc:src/main.tsx) - Основной файл React приложения
+- [src/App.tsx](mdc:src/App.tsx) - Корневой компонент приложения
+
+## Компоненты игры
+
+- [src/components/Game.tsx](mdc:src/components/Game.tsx) - Управление игровой сценой и состоянием
+- [src/components/Arena.tsx](mdc:src/components/Arena.tsx) - Создание арены и препятствий
+- [src/components/Player.tsx](mdc:src/components/Player.tsx) - Управление игроком и стрельбой
+- [src/components/Zombies.tsx](mdc:src/components/Zombies.tsx) - Логика ИИ зомби
+- [src/components/UI.tsx](mdc:src/components/UI.tsx) - Пользовательский интерфейс
+
+## Стили
+
+- [src/styles.css](mdc:src/styles.css) - Общие стили для игры
