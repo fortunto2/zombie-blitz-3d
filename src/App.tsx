@@ -19,14 +19,29 @@ const App: React.FC = () => {
   
   // Состояния для мини-карты и счетчиков
   const [playerPosition, setPlayerPosition] = useState<Vector3 | null>(null);
+  const [playerDirection, setPlayerDirection] = useState<Vector3 | null>(null);
   const [petPosition, setPetPosition] = useState<Vector3 | null>(null);
-  const [zombiePositions, setZombiePositions] = useState<{ id: string; position: Vector3; isDying: boolean }[]>([]);
+  const [petDirection, setPetDirection] = useState<Vector3 | null>(null);
+  const [zombiePositions, setZombiePositions] = useState<{ id: string; position: Vector3; isDying: boolean; direction?: Vector3 }[]>([]);
   const [zombiesKilled, setZombiesKilled] = useState(0);
   
   // Колбэк для обновления данных о зомби
   const handleZombieDataUpdate = (data: { positions: any[]; killed: number }) => {
     setZombiePositions(data.positions);
     setZombiesKilled(data.killed);
+  };
+
+  // Обработчик обновления направления игрока
+  const handlePlayerDirectionUpdate = (direction: Vector3) => {
+    setPlayerDirection(direction);
+  };
+
+  // Обработчик обновления позиции и направления питомца
+  const handlePetUpdate = (position: Vector3 | null, direction?: Vector3) => {
+    setPetPosition(position);
+    if (direction) {
+      setPetDirection(direction);
+    }
   };
 
   const handleGameOver = () => {
@@ -129,8 +144,9 @@ const App: React.FC = () => {
             onZombieHurt={handleZombieHurt}
             onZombieDeath={handleZombieDeath}
             setZombieData={handleZombieDataUpdate}
-            setPetPosition={setPetPosition}
+            setPetPosition={handlePetUpdate}
             setPlayerPos={setPlayerPosition}
+            setPlayerDirection={handlePlayerDirectionUpdate}
           />
         </Suspense>
         <Stats />
@@ -157,8 +173,10 @@ const App: React.FC = () => {
             onRestart={handleRestart} 
             isPetEnabled={isPetEnabled}
             playerPosition={playerPosition}
+            playerDirection={playerDirection}
             zombiePositions={zombiePositions}
             petPosition={petPosition}
+            petDirection={petDirection}
             zombiesKilled={zombiesKilled}
           />
           

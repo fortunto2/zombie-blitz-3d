@@ -20,8 +20,9 @@ interface GameProps {
   onZombieHurt: () => void;
   onZombieDeath: () => void;
   setZombieData: (data: { positions: any[]; killed: number }) => void;
-  setPetPosition: (position: Vector3 | null) => void;
+  setPetPosition: (position: Vector3 | null, direction?: Vector3) => void;
   setPlayerPos: (position: Vector3) => void;
+  setPlayerDirection?: (direction: Vector3) => void;
 }
 
 const Game: React.FC<GameProps> = ({ 
@@ -36,18 +37,21 @@ const Game: React.FC<GameProps> = ({
   onZombieDeath,
   setZombieData,
   setPetPosition,
-  setPlayerPos
+  setPlayerPos,
+  setPlayerDirection
 }) => {
   const controlsRef = useRef<any>(null);
   const [zombies, setZombies] = useState<any[]>([]);
   const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 1, 0));
+  const [playerDirection, setLocalPlayerDirection] = useState<Vector3>(new Vector3(0, 0, 1));
   const [playerVelocity, setPlayerVelocity] = useState(new Vector3());
   const [score, setScore] = useState(0);
   const [health, setHealth] = useState(100);
   const [isLocked, setIsLocked] = useState(false);
   const [zombiesKilled, setZombiesKilled] = useState(0);
   const petPositionRef = useRef<Vector3 | null>(null);
-  const zombiePositionsRef = useRef<{ id: string; position: Vector3; isDying: boolean }[]>([]);
+  const zombiePositionsRef = useRef<{id: string; position: Vector3; isDying: boolean; direction?: Vector3}[]>([]);
+  const petDirectionRef = useRef<Vector3 | null>(null);
   
   // Получаем доступ к сцене из Three.js
   const { scene } = useThree();
@@ -107,6 +111,13 @@ const Game: React.FC<GameProps> = ({
     setPetPosition(petPositionRef.current);
   }, [petPositionRef.current, setPetPosition]);
 
+  // Добавляем эффект для синхронизации направления с родительским компонентом
+  useEffect(() => {
+    if (setPlayerDirection) {
+      setPlayerDirection(playerDirection);
+    }
+  }, [playerDirection, setPlayerDirection]);
+
   // Handle zombie hit - теперь это происходит только когда зомби действительно удален
   const handleZombieHit = (zombieId: string) => {
     setZombies(prev => prev.filter(z => z.id !== zombieId));
@@ -147,6 +158,14 @@ const Game: React.FC<GameProps> = ({
     }
   }, [isGameOver, gameScene]);
 
+  // Обновление позиции питомца
+  const handlePetPositionUpdate = (position: Vector3 | null, direction?: Vector3) => {
+    petPositionRef.current = position;
+    if (direction) {
+      petDirectionRef.current = direction;
+    }
+  };
+
   return (
     <>
       <PointerLockControls ref={controlsRef} />
@@ -166,6 +185,11 @@ const Game: React.FC<GameProps> = ({
         onZombieHit={handleZombieHit}
         onShoot={onShoot}
         onZombieHurt={onZombieHurt}
+        onUpdateDirection={setLocalPlayerDirection}
+        setPlayerPosition={setPlayerPosition} 
+        zombiePositions={zombiePositionsRef.current}
+        petPosition={petPositionRef.current || undefined}
+        onShot={(position, direction) => {}}
       />
       
       <Zombies 
@@ -184,7 +208,7 @@ const Game: React.FC<GameProps> = ({
           isEnabled={isPetEnabled}
           isGameOver={isGameOver || isPaused}
           onPlaySound={onPetSound}
-          updatePosition={(position) => { petPositionRef.current = position; }}
+          updatePosition={handlePetPositionUpdate}
         />
       )}
     </>

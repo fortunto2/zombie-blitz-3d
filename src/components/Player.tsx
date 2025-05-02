@@ -15,6 +15,11 @@ interface PlayerProps {
   onZombieHit: (zombieId: string) => void;
   onShoot?: () => void;
   onZombieHurt?: () => void;
+  onUpdateDirection?: (direction: Vector3) => void;
+  setPlayerPosition?: (pos: Vector3) => void;
+  zombiePositions?: { id: string; position: Vector3; isDying: boolean }[];
+  petPosition?: Vector3;
+  onShot?: (position: Vector3, direction: Vector3) => void;
 }
 
 interface BulletType {
@@ -41,7 +46,12 @@ const Player: React.FC<PlayerProps> = ({
   isGameOver,
   onZombieHit,
   onShoot,
-  onZombieHurt
+  onZombieHurt,
+  onUpdateDirection,
+  setPlayerPosition,
+  zombiePositions,
+  petPosition,
+  onShot
 }) => {
   const { camera, scene } = useThree();
   const playerRef = useRef<any>(null);
@@ -290,6 +300,11 @@ const Player: React.FC<PlayerProps> = ({
     
     setPosition(newPosition);
     
+    // Обновляем позицию игрока для мини-карты сразу после обновления основной позиции
+    if (setPlayerPosition) {
+      setPlayerPosition(newPosition.clone());
+    }
+    
     // Обновление позиции камеры
     camera.position.x = newPosition.x;
     camera.position.y = newPosition.y + 1.6; // Высота глаз игрока
@@ -390,6 +405,18 @@ const Player: React.FC<PlayerProps> = ({
         // Отдача назад и вверх
         gunRef.current.position.z += recoilCurve * 0.1; // Смещение назад
         gunRef.current.rotation.x -= recoilCurve * 0.1; // Поворот вверх
+      }
+    }
+    
+    // Передаем направление взгляда игрока
+    if (onUpdateDirection) {
+      const cameraDirection = new THREE.Vector3();
+      camera.getWorldDirection(cameraDirection);
+      onUpdateDirection(cameraDirection);
+      
+      // Если функция onShot определена, вызываем ее
+      if (onShot) {
+        onShot(playerRef.current.position.clone(), cameraDirection);
       }
     }
   });

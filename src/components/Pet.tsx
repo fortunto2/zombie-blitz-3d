@@ -9,7 +9,7 @@ interface PetProps {
   isEnabled: boolean;
   isGameOver: boolean;
   onPlaySound?: (soundType: 'bark' | 'bite') => void;
-  updatePosition?: (position: Vector3 | null) => void;
+  updatePosition?: (position: Vector3 | null, direction?: Vector3) => void;
 }
 
 interface ZombieTarget {
@@ -291,9 +291,13 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
     // Обновляем позицию питомца
     petPosition.current.copy(petRef.current!.position);
     
-    // Передаем обновленную позицию для мини-карты
+    // Передаем обновленную позицию и направление для мини-карты
     if (updatePosition) {
-      updatePosition(petPosition.current.clone());
+      // Определяем направление взгляда питомца из его поворота
+      const petDirection = new THREE.Vector3(0, 0, 1)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), petRef.current!.rotation.y);
+      
+      updatePosition(petPosition.current.clone(), petDirection);
     }
   });
   

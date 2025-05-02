@@ -302,4 +302,107 @@ body {
 
 .menu-button:first-of-type:hover {
   background-color: #336;
+}
+
+/* Стили для мини-карты с указателями направления */
+.mini-map {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 100px;
+  height: 100px;
+  background-color: rgba(0, 0, 0, 0.5);
+  border: 2px solid white;
+  border-radius: 50%;
+  z-index: 1001;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Добавляем перекрестие в центре мини-карты */
+.mini-map:after {
+  content: '';
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  top: 0;
+  left: 0;
+  background-image: radial-gradient(circle, transparent 48px, rgba(255, 255, 255, 0.2) 50px);
+  pointer-events: none;
+}
+
+.player-dot, .zombie-dot, .pet-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.player-dot {
+  background-color: #00aaff;
+  z-index: 3;
+  box-shadow: 0 0 4px rgba(0, 170, 255, 0.8);
+}
+
+.zombie-dot {
+  background-color: #ff0000;
+  z-index: 2;
+  box-shadow: 0 0 3px rgba(255, 0, 0, 0.8);
+}
+
+.zombie-dot.dying {
+  background-color: #ff8800;
+  opacity: 0.5;
+}
+
+.pet-dot {
+  background-color: #8B4513;
+  z-index: 3;
+  box-shadow: 0 0 3px rgba(139, 69, 19, 0.8);
+}
+
+/* Указатели направления на мини-карте */
+.direction-indicator {
+  position: absolute;
+  height: 1px;
+  background-color: inherit;
+  transform-origin: 0 50%;
+  left: 50%;
+  top: 50%;
+}
+
+.player-direction {
+  background-color: #00aaff;
+  height: 2px;
+  box-shadow: 0 0 3px rgba(0, 170, 255, 0.8);
+}
+
+.zombie-direction {
+  background-color: #ff0000; 
+  box-shadow: 0 0 3px rgba(255, 0, 0, 0.8);
+}
+
+.pet-direction {
+  background-color: #8B4513;
+  box-shadow: 0 0 3px rgba(139, 69, 19, 0.8);
+}
+
+/* Счетчики зомби */
+.zombie-counters {
+  position: fixed;
+  top: 30px;
+  left: 30px;
+  font-size: 18px;
+  color: white;
+  text-shadow: 1px 1px 2px black;
+  z-index: 1001;
+}
+
+.active-zombies {
+  margin-bottom: 5px;
+}
+
+.killed-zombies {
+  color: #ff8800;
 } 

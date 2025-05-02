@@ -16,7 +16,7 @@ interface ZombiesProps {
   setZombies: (zombies: ZombieData[]) => void;
   isGameOver: boolean;
   onPlayerDamage: (damage: number) => void;
-  updatePositions?: (positions: { id: string; position: Vector3; isDying: boolean }[]) => void;
+  updatePositions?: (positions: { id: string; position: Vector3; isDying: boolean; direction?: Vector3 }[]) => void;
   onZombieKilled?: (zombieId: string) => void;
 }
 
@@ -692,11 +692,18 @@ const Zombies: React.FC<ZombiesProps> = ({
     
     // Собираем данные о позициях зомби для мини-карты
     if (updatePositions) {
-      const positions = Object.values(zombieRefs.current).map(zombie => ({
-        id: zombie.id,
-        position: zombie.mesh.position.clone(),
-        isDying: zombie.isDying
-      }));
+      const positions = Object.values(zombieRefs.current).map(zombie => {
+        // Получаем направление взгляда из поворота зомби
+        const direction = new THREE.Vector3(0, 0, 1)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), zombie.mesh.rotation.y);
+        
+        return {
+          id: zombie.id,
+          position: zombie.mesh.position.clone(),
+          isDying: zombie.isDying,
+          direction: direction // Добавляем направление взгляда
+        };
+      });
       updatePositions(positions);
     }
     
