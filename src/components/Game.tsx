@@ -19,6 +19,9 @@ interface GameProps {
   onShoot: () => void;
   onZombieHurt: () => void;
   onZombieDeath: () => void;
+  setZombieData: (data: { positions: any[]; killed: number }) => void;
+  setPetPosition: (position: Vector3 | null) => void;
+  setPlayerPos: (position: Vector3) => void;
 }
 
 const Game: React.FC<GameProps> = ({ 
@@ -30,7 +33,10 @@ const Game: React.FC<GameProps> = ({
   onPetSound,
   onShoot,
   onZombieHurt,
-  onZombieDeath
+  onZombieDeath,
+  setZombieData,
+  setPetPosition,
+  setPlayerPos
 }) => {
   const controlsRef = useRef<any>(null);
   const [zombies, setZombies] = useState<any[]>([]);
@@ -39,6 +45,9 @@ const Game: React.FC<GameProps> = ({
   const [score, setScore] = useState(0);
   const [health, setHealth] = useState(100);
   const [isLocked, setIsLocked] = useState(false);
+  const [zombiesKilled, setZombiesKilled] = useState(0);
+  const petPositionRef = useRef<Vector3 | null>(null);
+  const zombiePositionsRef = useRef<{ id: string; position: Vector3; isDying: boolean }[]>([]);
   
   // Получаем доступ к сцене из Three.js
   const { scene } = useThree();
@@ -80,10 +89,29 @@ const Game: React.FC<GameProps> = ({
     onHealthChange(health);
   }, [health, onHealthChange]);
 
-  // Handle zombie hit
+  // Синхронизируем позицию игрока с UI
+  useEffect(() => {
+    setPlayerPos(playerPosition);
+  }, [playerPosition, setPlayerPos]);
+
+  // Обновляем данные о зомби для UI
+  useEffect(() => {
+    setZombieData({
+      positions: zombiePositionsRef.current,
+      killed: zombiesKilled
+    });
+  }, [zombiePositionsRef.current, zombiesKilled, setZombieData]);
+
+  // Синхронизируем данные о позиции питомца с UI
+  useEffect(() => {
+    setPetPosition(petPositionRef.current);
+  }, [petPositionRef.current, setPetPosition]);
+
+  // Handle zombie hit - теперь это происходит только когда зомби действительно удален
   const handleZombieHit = (zombieId: string) => {
     setZombies(prev => prev.filter(z => z.id !== zombieId));
     setScore(prev => prev + 10);
+    setZombiesKilled(prev => prev + 1);
     
     // Воспроизводим звук смерти зомби
     onZombieDeath();
@@ -107,6 +135,7 @@ const Game: React.FC<GameProps> = ({
       // Игра только что была перезапущена
       setScore(0);
       setHealth(100);
+      setZombiesKilled(0);
       
       // Сбрасываем состояние волны зомби
       if (typeof gameScene.userData.resetZombieWave === 'function') {
@@ -145,6 +174,8 @@ const Game: React.FC<GameProps> = ({
         setZombies={setZombies}
         isGameOver={isGameOver || isPaused}
         onPlayerDamage={handlePlayerDamage}
+        updatePositions={(positions) => { zombiePositionsRef.current = positions; }}
+        onZombieKilled={handleZombieHit}
       />
       
       {isPetEnabled && (
@@ -153,6 +184,7 @@ const Game: React.FC<GameProps> = ({
           isEnabled={isPetEnabled}
           isGameOver={isGameOver || isPaused}
           onPlaySound={onPetSound}
+          updatePosition={(position) => { petPositionRef.current = position; }}
         />
       )}
     </>

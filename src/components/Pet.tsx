@@ -9,6 +9,7 @@ interface PetProps {
   isEnabled: boolean;
   isGameOver: boolean;
   onPlaySound?: (soundType: 'bark' | 'bite') => void;
+  updatePosition?: (position: Vector3 | null) => void;
 }
 
 interface ZombieTarget {
@@ -17,11 +18,11 @@ interface ZombieTarget {
   distance: number;
 }
 
-const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlaySound }) => {
+const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlaySound, updatePosition }) => {
   const { scene } = useThree();
   const petRef = useRef<Group>(null);
   const targetPosition = useRef(new Vector3());
-  const velocity = useRef(new Vector3());
+  const petVelocity = useRef(new Vector3());
   const lastAttackTime = useRef(0);
   const lastBarkTime = useRef(0);
   const attackCooldown = 1500; // 1.5 секунды между атаками
@@ -252,10 +253,10 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
         }
         
         // Применяем скорость
-        velocity.current.copy(direction).multiplyScalar(speed * delta);
+        petVelocity.current.copy(direction).multiplyScalar(speed * delta);
         
         // Обновляем позицию
-        petRef.current!.position.add(velocity.current);
+        petRef.current!.position.add(petVelocity.current);
         
         // Ограничиваем в пределах арены
         const arenaSize = 23.5; // Чуть меньше, чтобы не застревать в стенах
@@ -285,6 +286,14 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
         petRef.current!.position.x = Math.max(-arenaSize, Math.min(arenaSize, petRef.current!.position.x));
         petRef.current!.position.z = Math.max(-arenaSize, Math.min(arenaSize, petRef.current!.position.z));
       }
+    }
+    
+    // Обновляем позицию питомца
+    petPosition.current.copy(petRef.current!.position);
+    
+    // Передаем обновленную позицию для мини-карты
+    if (updatePosition) {
+      updatePosition(petPosition.current.clone());
     }
   });
   

@@ -16,6 +16,8 @@ interface ZombiesProps {
   setZombies: (zombies: ZombieData[]) => void;
   isGameOver: boolean;
   onPlayerDamage: (damage: number) => void;
+  updatePositions?: (positions: { id: string; position: Vector3; isDying: boolean }[]) => void;
+  onZombieKilled?: (zombieId: string) => void;
 }
 
 interface Zombie {
@@ -101,7 +103,9 @@ const Zombies: React.FC<ZombiesProps> = ({
   zombies,
   setZombies,
   isGameOver,
-  onPlayerDamage
+  onPlayerDamage,
+  updatePositions,
+  onZombieKilled
 }) => {
   const { scene } = useThree();
   const zombieRefs = useRef<{ [key: string]: Zombie }>({});
@@ -118,7 +122,7 @@ const Zombies: React.FC<ZombiesProps> = ({
   
   // Добавляем состояние для отслеживания начального всплеска зомби
   const initialZombieWave = useRef<{ active: boolean; count: number; startTime: number }>({
-    active: true,
+    active: false, // Изменяем на false, чтобы отключить начальную волну
     count: 0,
     startTime: Date.now()
   });
@@ -558,56 +562,27 @@ const Zombies: React.FC<ZombiesProps> = ({
   const spawnZombie = () => {
     const now = Date.now();
     
-    // Обрабатываем начальную волну из 10 зомби в течение 3 секунд при старте игры
-    if (initialZombieWave.current.active) {
-      // Если прошло более 3 секунд, завершаем начальную волну
-      if (now - initialZombieWave.current.startTime > 3000) {
-        initialZombieWave.current.active = false;
-        console.log('Начальная волна зомби завершена');
-      } else if (initialZombieWave.current.count < 10) {
-        // Вычисляем, сколько зомби должно было появиться к этому моменту
-        const elapsedTime = now - initialZombieWave.current.startTime;
-        const targetCount = Math.floor((elapsedTime / 3000) * 10);
-        
-        // Создаем зомби до достижения целевого количества
-        if (initialZombieWave.current.count < targetCount) {
-          const arenaSize = 24;
-          
-          // Создаем зомби равномерно со всех сторон арены
-          const side = initialZombieWave.current.count % 4; // 0: верх, 1: право, 2: низ, 3: лево
-          const spawnPosition = getRandomWallPosition(arenaSize, side);
-          
-          // Создаем предупреждение с очень коротким временем жизни
-          const warning = createZombieWarning(spawnPosition);
-          warning.startTime = now - 800; // Почти мгновенное появление зомби
-          
-          initialZombieWave.current.count++;
-          console.log(`Начальная волна: создан зомби ${initialZombieWave.current.count}/10`);
-        }
-      }
-    } else {
-      // Стандартный спавн зомби после начальной волны
-      // Изменяем интервал спавна зомби на 2 секунды
-      const spawnInterval = 2000; // Было 1000 (1 секунда)
+    // Стандартный спавн зомби
+    // Изменяем интервал спавна зомби на 2 секунды
+    const spawnInterval = 2000; // Было 1000 (1 секунда)
+    
+    if (now - lastSpawnTime.current > spawnInterval) {
+      lastSpawnTime.current = now;
       
-      if (now - lastSpawnTime.current > spawnInterval) {
-        lastSpawnTime.current = now;
-        
-        // Создаем предупреждение о появлении зомби
-        const arenaSize = 24;
-        const spawnPosition = getRandomWallPosition(arenaSize);
-        
-        // Создаем предупреждение вместо зомби
-        createZombieWarning(spawnPosition);
-        
-        // Увеличиваем волну каждые 10 спавнов (20 секунд)
-        if (wave.current % 10 === 0) {
-          baseZombieSpeed.current = Math.min(7, baseZombieSpeed.current + 0.4);
-          console.log(`Волна ${wave.current}: скорость зомби увеличена до ${baseZombieSpeed.current.toFixed(1)}`);
-        }
-        
-        wave.current++;
+      // Создаем предупреждение о появлении зомби
+      const arenaSize = 24;
+      const spawnPosition = getRandomWallPosition(arenaSize);
+      
+      // Создаем предупреждение вместо зомби
+      createZombieWarning(spawnPosition);
+      
+      // Увеличиваем волну каждые 10 спавнов (20 секунд)
+      if (wave.current % 10 === 0) {
+        baseZombieSpeed.current = Math.min(7, baseZombieSpeed.current + 0.4);
+        console.log(`Волна ${wave.current}: скорость зомби увеличена до ${baseZombieSpeed.current.toFixed(1)}`);
       }
+      
+      wave.current++;
     }
   };
   
@@ -695,6 +670,11 @@ const Zombies: React.FC<ZombiesProps> = ({
       zombie.mesh.rotation.y = zombie.mesh.rotation.y; // Сохраняем текущее значение
       zombie.mesh.rotation.z = 0;
       
+      // Уведомляем об удалении зомби (для учета очков)
+      if (onZombieKilled) {
+        onZombieKilled(zombie.id);
+      }
+      
       // Время анимации истекло, удаляем зомби
       return true; // Готов к удалению
     }
@@ -709,6 +689,16 @@ const Zombies: React.FC<ZombiesProps> = ({
     
     // Обновляем предупреждения о зомби
     updateZombieWarnings(delta);
+    
+    // Собираем данные о позициях зомби для мини-карты
+    if (updatePositions) {
+      const positions = Object.values(zombieRefs.current).map(zombie => ({
+        id: zombie.id,
+        position: zombie.mesh.position.clone(),
+        isDying: zombie.isDying
+      }));
+      updatePositions(positions);
+    }
     
     // Обновляем каждого зомби
     Object.keys(zombieRefs.current).forEach(id => {
@@ -810,13 +800,6 @@ const Zombies: React.FC<ZombiesProps> = ({
     // Добавляем функцию для сброса волны зомби
     scene.userData.resetZombieWave = () => {
       console.log('Сброс волны зомби');
-      
-      // Сбрасываем начальную волну
-      initialZombieWave.current = {
-        active: true,
-        count: 0,
-        startTime: Date.now()
-      };
       
       // Сбрасываем счетчик волн
       wave.current = 1;

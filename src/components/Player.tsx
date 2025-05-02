@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Vector3, Raycaster, Vector2, Mesh } from 'three';
+import { Vector3, Raycaster, Vector2, Mesh, BoxGeometry, MeshStandardMaterial, Group } from 'three';
+import * as THREE from 'three';
 import Bullet from '../components/Bullet';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -48,6 +49,9 @@ const Player: React.FC<PlayerProps> = ({
   const mouse = useRef(new Vector2(0, 0)); // Центр экрана для raycaster
   const [bullets, setBullets] = useState<Array<BulletType>>([]);
   const [muzzleFlashes, setMuzzleFlashes] = useState<Array<MuzzleFlashType>>([]);
+  const gunRef = useRef<Group>(null);
+  const lastShootTime = useRef<number>(0);
+  const isMoving = useRef<boolean>(false);
   
   // Физические параметры
   const GRAVITY = 20;
@@ -80,24 +84,28 @@ const Player: React.FC<PlayerProps> = ({
       switch(e.code) {
         case 'KeyW':
           keys.current.backward = true; // W двигает назад
+          isMoving.current = true;
           break;
         case 'KeyS':
           keys.current.forward = true; // S двигает вперед
+          isMoving.current = true;
           break;
         case 'KeyA':
           keys.current.left = true;
+          isMoving.current = true;
           break;
         case 'KeyD':
           keys.current.right = true;
+          isMoving.current = true;
           break;
-        // case 'Space':
-        //   keys.current.space = true;
-        //   // Прыжок только если игрок на земле
-        //   if (isOnGround.current) {
-        //     setVelocity(new Vector3(velocity.x, JUMP_FORCE, velocity.z));
-        //     isOnGround.current = false;
-        //   }
-        //   break;
+        case 'Space':
+          keys.current.space = true;
+          // Прыжок только если игрок на земле
+          if (isOnGround.current) {
+            setVelocity(new Vector3(velocity.x, JUMP_FORCE, velocity.z));
+            isOnGround.current = false;
+          }
+          break;
       }
     };
     
@@ -105,25 +113,32 @@ const Player: React.FC<PlayerProps> = ({
       switch(e.code) {
         case 'KeyW':
           keys.current.backward = false;
+          if (!keys.current.forward && !keys.current.left && !keys.current.right) isMoving.current = false;
           break;
         case 'KeyS':
           keys.current.forward = false;
+          if (!keys.current.backward && !keys.current.left && !keys.current.right) isMoving.current = false;
           break;
         case 'KeyA':
           keys.current.left = false;
+          if (!keys.current.forward && !keys.current.backward && !keys.current.right) isMoving.current = false;
           break;
         case 'KeyD':
           keys.current.right = false;
+          if (!keys.current.forward && !keys.current.left && !keys.current.backward) isMoving.current = false;
           break;
-        // case 'Space':
-        //   keys.current.space = false;
-        //   break;
+        case 'Space':
+          keys.current.space = false;
+          break;
       }
     };
     
     // Обработка стрельбы
     const handleShoot = () => {
       if (!isLocked || isGameOver) return;
+      
+      const now = Date.now();
+      lastShootTime.current = now;
       
       // Воспроизводим звук выстрела, если передан соответствующий обработчик
       if (onShoot) {
@@ -203,12 +218,6 @@ const Player: React.FC<PlayerProps> = ({
           // Вызываем функцию нанесения урона зомби из компонента Zombies
           if (scene.userData.damageZombie) {
             scene.userData.damageZombie(parent.userData.id);
-            
-            // Увеличиваем счет только если зомби умирает (здоровье <= 0)
-            if (parent.userData.health <= 34) { // Если это будет последний удар
-              // Use setTimeout to defer the state update
-              setTimeout(() => onZombieHit(parent.userData.id), 0); // Увеличиваем счет (но зомби не удаляем)
-            }
           }
           
           console.log(`Пуля ${bullet.id.substring(0, 8)} попала в зомби!`);
@@ -351,7 +360,89 @@ const Player: React.FC<PlayerProps> = ({
         });
       });
     }
+    
+    // Анимация оружия
+    if (gunRef.current) {
+      // Получаем текущее время
+      const now = Date.now();
+      
+      // Обновляем позицию оружия, чтобы оно всегда было перед камерой и смещено вправо
+      gunRef.current.position.set(0.3, -0.35, -0.7); // Смещаем вправо (было 0, -0.35, -0.7)
+      
+      // Плавное движение при ходьбе
+      if (isMoving.current) {
+        const walkOffset = Math.sin(now * 0.01) * 0.01;
+        gunRef.current.position.y += walkOffset;
+        gunRef.current.rotation.x = Math.sin(now * 0.01) * 0.02;
+        gunRef.current.rotation.z = Math.sin(now * 0.01) * 0.01;
+      } else {
+        // Плавное дыхание, когда игрок стоит на месте
+        const breathOffset = Math.sin(now * 0.001) * 0.005;
+        gunRef.current.position.y += breathOffset;
+      }
+      
+      // Эффект отдачи при стрельбе
+      const timeSinceLastShot = now - lastShootTime.current;
+      if (timeSinceLastShot < 150) { // Анимация отдачи длится 150мс
+        const recoilProgress = timeSinceLastShot / 150; // От 0 до 1
+        const recoilCurve = 1 - recoilProgress; // Начинается с 1 и снижается до 0
+        
+        // Отдача назад и вверх
+        gunRef.current.position.z += recoilCurve * 0.1; // Смещение назад
+        gunRef.current.rotation.x -= recoilCurve * 0.1; // Поворот вверх
+      }
+    }
   });
+  
+  // Компонент MP5
+  const MP5 = () => {
+    // Создаем группу для всего оружия
+    return (
+      <group ref={gunRef} position={[0.3, -0.35, -0.7]}>
+        {/* Основной корпус автомата */}
+        <mesh position={[0, 0, 0]}>
+          <boxGeometry args={[0.08, 0.08, 0.5]} />
+          <meshStandardMaterial color="black" metalness={0.7} roughness={0.3} />
+        </mesh>
+        
+        {/* Магазин */}
+        <mesh position={[0, -0.1, 0.05]}>
+          <boxGeometry args={[0.06, 0.18, 0.12]} />
+          <meshStandardMaterial color="black" metalness={0.7} roughness={0.3} />
+        </mesh>
+        
+        {/* Ствол */}
+        <mesh position={[0, 0.01, -0.3]}>
+          <cylinderGeometry args={[0.02, 0.02, 0.2, 8]} />
+          <meshStandardMaterial color="#333" metalness={0.9} roughness={0.2} />
+        </mesh>
+        
+        {/* Рукоятка */}
+        <mesh position={[0, -0.08, 0.15]}>
+          <boxGeometry args={[0.06, 0.15, 0.08]} />
+          <meshStandardMaterial color="#222" metalness={0.5} roughness={0.5} />
+        </mesh>
+        
+        {/* Приклад */}
+        <mesh position={[0, 0, 0.3]}>
+          <boxGeometry args={[0.06, 0.06, 0.15]} />
+          <meshStandardMaterial color="#222" metalness={0.5} roughness={0.5} />
+        </mesh>
+        
+        {/* Прицел */}
+        <mesh position={[0, 0.06, 0.1]}>
+          <boxGeometry args={[0.03, 0.02, 0.08]} />
+          <meshStandardMaterial color="#333" metalness={0.8} roughness={0.2} />
+        </mesh>
+        
+        {/* Передняя рукоятка */}
+        <mesh position={[0, -0.06, -0.15]}>
+          <boxGeometry args={[0.05, 0.08, 0.05]} />
+          <meshStandardMaterial color="#222" metalness={0.5} roughness={0.5} />
+        </mesh>
+      </group>
+    );
+  };
   
   // Компонент вспышки выстрела
   const MuzzleFlash = ({ position, direction }: { position: Vector3; direction: Vector3 }) => {
@@ -384,6 +475,11 @@ const Player: React.FC<PlayerProps> = ({
         <capsuleGeometry args={[0.5, 1, 1, 16]} />
         <meshStandardMaterial wireframe color="red" />
       </mesh>
+      
+      {/* Добавляем MP5 как дочерний элемент камеры */}
+      <primitive object={camera}>
+        <MP5 />
+      </primitive>
       
       {/* Рендеринг всех пуль */}
       {bullets.map(bullet => (

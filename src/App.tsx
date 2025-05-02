@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Stats } from '@react-three/drei';
+import { Vector3 } from 'three';
 import Game from './components/Game';
 import UI from './components/UI';
 import Menu from './components/Menu';
@@ -15,6 +16,18 @@ const App: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [isPetEnabled, setIsPetEnabled] = useState(true);
   const soundEffectsRef = useRef<SoundEffectsRef>(null);
+  
+  // Состояния для мини-карты и счетчиков
+  const [playerPosition, setPlayerPosition] = useState<Vector3 | null>(null);
+  const [petPosition, setPetPosition] = useState<Vector3 | null>(null);
+  const [zombiePositions, setZombiePositions] = useState<{ id: string; position: Vector3; isDying: boolean }[]>([]);
+  const [zombiesKilled, setZombiesKilled] = useState(0);
+  
+  // Колбэк для обновления данных о зомби
+  const handleZombieDataUpdate = (data: { positions: any[]; killed: number }) => {
+    setZombiePositions(data.positions);
+    setZombiesKilled(data.killed);
+  };
 
   const handleGameOver = () => {
     setIsGameOver(true);
@@ -115,6 +128,9 @@ const App: React.FC = () => {
             onShoot={handleShoot}
             onZombieHurt={handleZombieHurt}
             onZombieDeath={handleZombieDeath}
+            setZombieData={handleZombieDataUpdate}
+            setPetPosition={setPetPosition}
+            setPlayerPos={setPlayerPosition}
           />
         </Suspense>
         <Stats />
@@ -140,6 +156,10 @@ const App: React.FC = () => {
             isGameOver={isGameOver} 
             onRestart={handleRestart} 
             isPetEnabled={isPetEnabled}
+            playerPosition={playerPosition}
+            zombiePositions={zombiePositions}
+            petPosition={petPosition}
+            zombiesKilled={zombiesKilled}
           />
           
           {isPaused && !isGameOver && (
