@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Vector3, Raycaster, Vector2, Mesh } from 'three';
+import { Vector3, Raycaster, Vector2, Mesh, Group } from 'three';
+import * as THREE from 'three';
 import Bullet from '../components/Bullet';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -30,6 +31,100 @@ interface MuzzleFlashType {
   direction: Vector3;
   createdAt: number;
 }
+
+// Компонент модели оружия
+const GunModel: React.FC = () => {
+  const gunRef = useRef<Group>(null);
+  
+  useEffect(() => {
+    if (!gunRef.current) return;
+    
+    // Создаем оружие (дробовик в руках игрока)
+    const createShotgun = () => {
+      // Ствол
+      const barrelGeometry = new THREE.CylinderGeometry(0.03, 0.04, 0.7, 8);
+      const barrelMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x333333, 
+        shininess: 60 
+      });
+      const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+      barrel.rotation.x = Math.PI / 2; // Поворачиваем ствол горизонтально
+      barrel.position.set(0, 0, -0.3);
+      gunRef.current.add(barrel);
+      
+      // Второй ствол (дробовик с двумя стволами)
+      const barrel2 = barrel.clone();
+      barrel2.position.set(0, 0.05, -0.3);
+      gunRef.current.add(barrel2);
+      
+      // Приклад
+      const stockGeometry = new THREE.BoxGeometry(0.05, 0.1, 0.4);
+      const stockMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x8B4513, // Коричневый для дерева
+        shininess: 20 
+      });
+      const stock = new THREE.Mesh(stockGeometry, stockMaterial);
+      stock.position.set(0, -0.05, 0.15);
+      gunRef.current.add(stock);
+      
+      // Рукоятка
+      const handleGeometry = new THREE.BoxGeometry(0.04, 0.15, 0.06);
+      const handle = new THREE.Mesh(handleGeometry, stockMaterial);
+      handle.position.set(0, -0.15, 0.05);
+      handle.rotation.x = -Math.PI / 8; // Немного наклоняем рукоятку
+      gunRef.current.add(handle);
+      
+      // Деталь между стволами и прикладом
+      const middleGeometry = new THREE.BoxGeometry(0.1, 0.12, 0.1);
+      const middleMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x000000, 
+        shininess: 40 
+      });
+      const middle = new THREE.Mesh(middleGeometry, middleMaterial);
+      middle.position.set(0, 0, 0);
+      gunRef.current.add(middle);
+      
+      // Прицел
+      const sightGeometry = new THREE.BoxGeometry(0.02, 0.03, 0.02);
+      const sightMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x222222, 
+        shininess: 50 
+      });
+      const sight = new THREE.Mesh(sightGeometry, sightMaterial);
+      sight.position.set(0, 0.08, -0.3);
+      gunRef.current.add(sight);
+      
+      // Блики на стволах для визуального эффекта
+      const highlightGeometry = new THREE.PlaneGeometry(0.02, 0.4);
+      const highlightMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffffff, 
+        transparent: true, 
+        opacity: 0.3,
+        side: THREE.DoubleSide 
+      });
+      
+      const highlight1 = new THREE.Mesh(highlightGeometry, highlightMaterial);
+      highlight1.rotation.x = Math.PI / 2;
+      highlight1.rotation.z = Math.PI / 2;
+      highlight1.position.set(0.031, 0, -0.3);
+      gunRef.current.add(highlight1);
+      
+      const highlight2 = new THREE.Mesh(highlightGeometry, highlightMaterial);
+      highlight2.rotation.x = Math.PI / 2;
+      highlight2.rotation.z = Math.PI / 2;
+      highlight2.position.set(0.031, 0.05, -0.3);
+      gunRef.current.add(highlight2);
+      
+      // Устанавливаем правильную позицию для отображения в камере
+      gunRef.current.position.set(0.25, -0.25, -0.5);
+      gunRef.current.rotation.set(0, 0, 0);
+    };
+    
+    createShotgun();
+  }, []);
+  
+  return <group ref={gunRef} />;
+};
 
 const Player: React.FC<PlayerProps> = ({
   position,
@@ -129,6 +224,10 @@ const Player: React.FC<PlayerProps> = ({
       if (onShoot) {
         onShoot();
       }
+      
+      // Создаем эффект отдачи
+      setRecoil(0.05);
+      setTimeout(() => setRecoil(0), 150);
       
       // Создаем новую пулю
       const bulletId = uuidv4();
@@ -275,7 +374,7 @@ const Player: React.FC<PlayerProps> = ({
     
     // Обновление позиции с учетом коллизий
     // В простом случае не даем выйти за пределы арены
-    const arenaSize = 24;  // Чуть меньше размера арены (25) для учета размера игрока
+    const arenaSize = 74; // Обновляем: чуть меньше размера арены (75) для учета размера игрока
     newPosition.x = Math.max(-arenaSize, Math.min(arenaSize, newPosition.x));
     newPosition.z = Math.max(-arenaSize, Math.min(arenaSize, newPosition.z));
     
@@ -378,32 +477,55 @@ const Player: React.FC<PlayerProps> = ({
     );
   };
   
+  // Добавляем состояние для анимации отдачи
+  const [recoil, setRecoil] = useState<number>(0);
+  const gunRef = useRef<Group>(null);
+  
+  // Позиционирование оружия с учетом отдачи
+  useFrame(() => {
+    if (gunRef.current) {
+      // Базовая позиция
+      gunRef.current.position.set(0.25, -0.25, -0.5);
+      
+      // Применяем отдачу если есть
+      if (recoil > 0) {
+        gunRef.current.position.z += recoil;
+        gunRef.current.rotation.x -= recoil * 2;
+      }
+    }
+  });
+  
   return (
     <>
       <mesh ref={playerRef} position={position} visible={false}>
-        <capsuleGeometry args={[0.5, 1, 1, 16]} />
-        <meshStandardMaterial wireframe color="red" />
+        <sphereGeometry args={[0.5, 16, 16]} />
+        <meshBasicMaterial color="blue" wireframe />
       </mesh>
       
-      {/* Рендеринг всех пуль */}
-      {bullets.map(bullet => (
-        <Bullet 
-          key={bullet.id} 
-          position={bullet.position} 
-          direction={bullet.direction} 
+      {bullets.map((bullet) => (
+        <Bullet
+          key={bullet.id}
+          position={bullet.position}
+          direction={bullet.direction}
+          hasHit={bullet.hasHit}
+          onHit={() => handleBulletHit(bullet.id)}
         />
       ))}
       
-      {/* Рендеринг вспышек выстрелов */}
-      {muzzleFlashes.map(flash => (
+      {muzzleFlashes.map((flash) => (
         <MuzzleFlash
           key={flash.id}
           position={flash.position}
           direction={flash.direction}
         />
       ))}
+      
+      {/* Рендерим модель оружия в руках игрока (будет следовать за камерой) */}
+      <group position={camera.position} rotation={camera.rotation} ref={gunRef}>
+        <GunModel />
+      </group>
     </>
   );
 };
 
-export default Player; 
+export default Player;

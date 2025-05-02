@@ -14,6 +14,7 @@ const App: React.FC = () => {
   const [showMenu, setShowMenu] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [isPetEnabled, setIsPetEnabled] = useState(true);
+  const [gameStarted, setGameStarted] = useState(false);
   const soundEffectsRef = useRef<SoundEffectsRef>(null);
 
   const handleGameOver = () => {
@@ -24,6 +25,7 @@ const App: React.FC = () => {
     setIsGameOver(false);
     setScore(0);
     setHealth(100);
+    setGameStarted(true);
   };
 
   const handleScoreChange = (newScore: number) => {
@@ -43,11 +45,13 @@ const App: React.FC = () => {
     setScore(0);
     setHealth(100);
     setIsPaused(false);
+    setGameStarted(true);
   };
   
   const handleQuitToMenu = () => {
     setShowMenu(true);
     setIsPaused(false);
+    setGameStarted(false);
   };
   
   const handleTogglePet = (enabled: boolean) => {
@@ -115,6 +119,7 @@ const App: React.FC = () => {
             onShoot={handleShoot}
             onZombieHurt={handleZombieHurt}
             onZombieDeath={handleZombieDeath}
+            gameStarted={gameStarted}
           />
         </Suspense>
         <Stats />

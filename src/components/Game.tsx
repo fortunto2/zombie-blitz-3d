@@ -19,6 +19,7 @@ interface GameProps {
   onShoot: () => void;
   onZombieHurt: () => void;
   onZombieDeath: () => void;
+  gameStarted: boolean;
 }
 
 const Game: React.FC<GameProps> = ({ 
@@ -30,7 +31,8 @@ const Game: React.FC<GameProps> = ({
   onPetSound,
   onShoot,
   onZombieHurt,
-  onZombieDeath
+  onZombieDeath,
+  gameStarted
 }) => {
   const controlsRef = useRef<any>(null);
   const [zombies, setZombies] = useState<any[]>([]);
@@ -145,6 +147,7 @@ const Game: React.FC<GameProps> = ({
         setZombies={setZombies}
         isGameOver={isGameOver || isPaused}
         onPlayerDamage={handlePlayerDamage}
+        gameStarted={gameStarted}
       />
       
       {isPetEnabled && (
