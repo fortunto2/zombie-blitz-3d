@@ -29,9 +29,6 @@ importers:
       three:
         specifier: ^0.176.0
         version: 0.176.0
-      three-steer:
-        specifier: ^0.2.5
-        version: 0.2.5
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
@@ -783,12 +780,6 @@ packages:
     resolution: {integrity: sha512-kv0Byb++AXztEGsULgMAs8U2jgUdz6HPpAB/wDJnLiLlaWQX2APHhiTJIN7rqW+Of0eRgcp7jn05U1BsCP3xBA==}
     peerDependencies:
       three: '>=0.128.0'
-
-  three-steer@0.2.5:
-    resolution: {integrity: sha512-ZBCY+OoW/PmJxyU9HUFAYcvBW0k30ZJc9Ws5PLpOgNwpR7i5rb211IGagEOSl16A8olwHnb+55dPQzLpv9fVag==}
-
-  three@0.153.0:
-    resolution: {integrity: sha512-OCP2/uQR6GcDpSLnJt/3a4mdS0kNWcbfUXIwLoEMgLzEUIVIYsSDwskpmOii/AkDM+BBwrl6+CKgrjX9+E2aWg==}
 
   three@0.176.0:
     resolution: {integrity: sha512-PWRKYWQo23ojf9oZSlRGH8K09q7nRSWx6LY/HF/UUrMdYgN9i1e2OwJYHoQjwc6HF/4lvvYLC5YC1X8UJL2ZpA==}
@@ -1586,12 +1577,6 @@ snapshots:
       fflate: 0.6.10
       potpack: 1.0.2
       three: 0.176.0
-
-  three-steer@0.2.5:
-    dependencies:
-      three: 0.153.0
-
-  three@0.153.0: {}
 
   three@0.176.0: {}
 
