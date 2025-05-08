@@ -129,6 +129,16 @@ const App: React.FC = () => {
     };
   }, [showMenu, isGameOver]);
 
+  // Стиль для контейнера статистики, чтобы панели шли друг под другом
+  const statsContainerStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: '0px',
+    left: '0px',
+    zIndex: 1000,
+    display: 'flex',
+    flexDirection: 'column'
+  };
+
   return (
     <>
       <Canvas shadows>
@@ -149,8 +159,20 @@ const App: React.FC = () => {
             setPlayerDirection={handlePlayerDirectionUpdate}
           />
         </Suspense>
-        <Stats />
+        {/* Контейнер для панелей статистики */}
+        <group> {/* Используем group для позиционирования в Canvas, если Stats не принимает style напрямую */}
+          {/* Stats компонент не принимает style напрямую. Мы можем обернуть их или использовать className и CSS файл. */}
+          {/* Для простоты, разместим их в разных углах или придется добавлять CSS */}
+          {/* Так как Stats рендерятся в DOM элемент вне Canvas, мы можем их стилизовать через CSS или div */}
+        </group>
       </Canvas>
+
+      {/* Помещаем Stats вне Canvas, чтобы легче стилизовать их положение */}
+      <div style={statsContainerStyle}>
+        <Stats showPanel={0} className="fps-stats" /> {/* FPS */}
+        <Stats showPanel={1} className="ms-stats" />  {/* MS */}
+        <Stats showPanel={2} className="mb-stats" />  {/* MB */}
+      </div>
       
       {/* Звуковые эффекты перенесены сюда из компонента Game */}
       <SoundEffects 

@@ -57,6 +57,19 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
   const DETECT_ZOMBIE_RANGE = 12; // Увеличили радиус обнаружения зомби
   const ATTACK_RANGE = 1.5; // Расстояние атаки зомби
   
+  // Параметры оптимизации
+  const ZOMBIES_SEARCH_INTERVAL = 10; // Обновлять список зомби каждые N кадров
+  const ANIMATION_SKIP_FRAMES = 2; // Выполнять анимации только каждые N кадров
+  const PERFORMANCE_CHECK_INTERVAL = 60; // Проверять производительность каждые N кадров
+  const LOW_PERFORMANCE_MODE = useRef(false); // Флаг режима низкой производительности
+  
+  // Кэш зомби для оптимизации поиска
+  const zombieCache = useRef<ZombieTarget[]>([]);
+  const lastZombieSearchTime = useRef(0);
+  const frameCounter = useRef(0);
+  const lastFpsCheckTime = useRef(0);
+  const fpsHistory = useRef<number[]>([]);
+  
   // Инициализация питомца при монтировании
   useEffect(() => {
     // Если питомец не включен, не создаем его
@@ -115,7 +128,36 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
   
   // Создание и обновление питомца
   useFrame((_, delta) => {
+    frameCounter.current++;
+    
     if (!isEnabled || isGameOver) return;
+    
+    // Проверка производительности и адаптация уровня детализации
+    if (frameCounter.current % PERFORMANCE_CHECK_INTERVAL === 0) {
+      const now = performance.now();
+      if (lastFpsCheckTime.current > 0) {
+        const elapsedMs = now - lastFpsCheckTime.current;
+        const fps = 1000 / (elapsedMs / PERFORMANCE_CHECK_INTERVAL);
+        
+        fpsHistory.current.push(fps);
+        if (fpsHistory.current.length > 5) {
+          fpsHistory.current.shift();
+        }
+        
+        // Вычисляем средний FPS
+        const avgFps = fpsHistory.current.reduce((sum, fps) => sum + fps, 0) / fpsHistory.current.length;
+        
+        // Адаптируем уровень детализации
+        if (avgFps < 30 && !LOW_PERFORMANCE_MODE.current) {
+          console.log('Низкий FPS для питомца, снижаем детализацию');
+          LOW_PERFORMANCE_MODE.current = true;
+        } else if (avgFps > 45 && LOW_PERFORMANCE_MODE.current) {
+          console.log('FPS восстановлен, возвращаем стандартную детализацию питомца');
+          LOW_PERFORMANCE_MODE.current = false;
+        }
+      }
+      lastFpsCheckTime.current = now;
+    }
     
     // Только при первом рендере создаём питомца в случайной позиции
     if (!isInitialized.current && petRef.current) {
@@ -147,19 +189,34 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
     // Обновляем сохраненную позицию питомца
     petPosition.current.copy(petRef.current.position);
     
-    // Вспомогательные анимации
-    animateTail();
-    animateHead();
-    animateJaw();
+    // Анимации выполняем только на определенных кадрах в зависимости от режима производительности
+    const animationSkipRate = LOW_PERFORMANCE_MODE.current ? ANIMATION_SKIP_FRAMES * 2 : ANIMATION_SKIP_FRAMES;
+    if (frameCounter.current % animationSkipRate === 0) {
+      animateTail();
+      animateHead();
+      animateJaw();
+    }
     
     const now = Date.now();
     
-    // Обработка звуков: лай собаки периодически
-    if (now - lastBarkTime.current > barkCooldown && 
-        (behaviorMode === 'wander' || Math.random() < 0.1)) {
-      lastBarkTime.current = now;
-      if (onPlaySound) {
-        onPlaySound('bark');
+    // Обработка звуков: лай собаки периодически, но реже в режиме низкой производительности
+    if (LOW_PERFORMANCE_MODE.current) {
+      // В режиме низкой производительности звуки воспроизводятся реже
+      if (now - lastBarkTime.current > barkCooldown * 2 && 
+          (behaviorMode === 'wander' || Math.random() < 0.05)) {
+        lastBarkTime.current = now;
+        if (onPlaySound) {
+          onPlaySound('bark');
+        }
+      }
+    } else {
+      // Стандартное воспроизведение звуков
+      if (now - lastBarkTime.current > barkCooldown && 
+          (behaviorMode === 'wander' || Math.random() < 0.1)) {
+        lastBarkTime.current = now;
+        if (onPlaySound) {
+          onPlaySound('bark');
+        }
       }
     }
     
@@ -172,27 +229,69 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
       wanderTimer.current = now;
     }
     
-    // Находим ближайшего зомби для атаки
-    let closestZombieForAttack: ZombieTarget | null = null;
-    let closestDistanceForAttack = DETECT_ZOMBIE_RANGE;
+    // Кэшированный поиск зомби для повышения производительности
+    // Обновляем кэш зомби только через определенные интервалы
+    const zombieSearchInterval = LOW_PERFORMANCE_MODE.current ? 
+      ZOMBIES_SEARCH_INTERVAL * 3 : ZOMBIES_SEARCH_INTERVAL;
     
-    // Перебираем всех зомби в сцене
-    scene.children.forEach((child) => {
-      if (child.userData && child.userData.isZombie && !child.userData.isDying) {
-        const zombiePosition = child.position.clone();
-        const distanceToZombie = petRef.current!.position.distanceTo(zombiePosition);
+    if (frameCounter.current % zombieSearchInterval === 0) {
+      // Очищаем кэш зомби
+      zombieCache.current = [];
+      
+      // Находим всех зомби в сцене
+      let closestZombieForAttack: ZombieTarget | null = null;
+      let closestDistanceForAttack = DETECT_ZOMBIE_RANGE;
+      
+      // Перебираем всех зомби в сцене
+      scene.children.forEach((child) => {
+        if (child.userData && child.userData.isZombie && !child.userData.isDying) {
+          const zombiePosition = child.position.clone();
+          const distanceToZombie = petRef.current!.position.distanceTo(zombiePosition);
+          
+          // Добавляем в кэш всех зомби в пределах дальности обнаружения
+          if (distanceToZombie < DETECT_ZOMBIE_RANGE * 1.5) {
+            const zombieTarget = {
+              id: child.userData.id,
+              position: zombiePosition,
+              distance: distanceToZombie
+            };
+            
+            zombieCache.current.push(zombieTarget);
+            
+            // Определяем ближайшего зомби
+            if (distanceToZombie < closestDistanceForAttack) {
+              closestZombieForAttack = zombieTarget;
+              closestDistanceForAttack = distanceToZombie;
+            }
+          }
+        }
+      });
+      
+      lastZombieSearchTime.current = now;
+    } else {
+      // Используем кэшированных зомби, но обновляем их дистанции
+      let closestZombieForAttack: ZombieTarget | null = null;
+      let closestDistanceForAttack = DETECT_ZOMBIE_RANGE;
+      
+      // Обновляем дистанции до кэшированных зомби
+      zombieCache.current.forEach(zombie => {
+        const distanceToZombie = petRef.current!.position.distanceTo(zombie.position);
+        zombie.distance = distanceToZombie;
         
-        // Если нашли более близкого зомби
         if (distanceToZombie < closestDistanceForAttack) {
-          closestZombieForAttack = {
-            id: child.userData.id,
-            position: zombiePosition,
-            distance: distanceToZombie
-          };
+          closestZombieForAttack = zombie;
           closestDistanceForAttack = distanceToZombie;
         }
-      }
-    });
+      });
+    }
+    
+    // Выбираем ближайшего зомби из кэша
+    let closestZombieForAttack: ZombieTarget | null = null;
+    if (zombieCache.current.length > 0) {
+      closestZombieForAttack = zombieCache.current.reduce((closest, zombie) => {
+        return (!closest || zombie.distance < closest.distance) ? zombie : closest;
+      }, null as ZombieTarget | null);
+    }
     
     // Если найден зомби, обязательно переходим в режим охоты
     if (closestZombieForAttack) {
@@ -216,6 +315,22 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
       handleFollowMode();
     }
     
+    // В режиме низкой производительности движение питомца обрабатывается не каждый кадр
+    const movementSkipRate = LOW_PERFORMANCE_MODE.current ? 2 : 1;
+    if (frameCounter.current % movementSkipRate !== 0) {
+      // В режиме низкой производительности пропускаем обработку движения на некоторых кадрах
+      
+      // Передаем обновленную позицию для мини-карты
+      if (updatePosition && frameCounter.current % 5 === 0) { // Обновление для UI реже
+        const petDirection = new THREE.Vector3(0, 0, 1)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), petRef.current!.rotation.y);
+        
+        updatePosition(petPosition.current.clone(), petDirection);
+      }
+      
+      return;
+    }
+    
     // Вычисляем направление движения
     const direction = new Vector3()
       .subVectors(targetPosition.current, petRef.current!.position)
@@ -236,8 +351,8 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
         while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
         while (normalizedDiff < -Math.PI) normalizedDiff -= Math.PI * 2;
         
-        // Плавный поворот
-        petRef.current!.rotation.y += normalizedDiff * Math.min(1, delta * 10);
+        // Плавный поворот, но быстрее в режиме низкой производительности
+        petRef.current!.rotation.y += normalizedDiff * Math.min(1, delta * (LOW_PERFORMANCE_MODE.current ? 15 : 10));
         
         // Вычисляем скорость в зависимости от цели
         let speed = PET_SPEED;
@@ -258,31 +373,8 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
         // Обновляем позицию
         petRef.current!.position.add(petVelocity.current);
         
-        // Ограничиваем в пределах арены
+        // Ограничиваем в пределах арены - упрощенная версия
         const arenaSize = 23.5; // Чуть меньше, чтобы не застревать в стенах
-        
-        // Проверяем, не вышел ли питомец за границы арены
-        const distanceFromCenter = Math.sqrt(
-          petRef.current!.position.x * petRef.current!.position.x + 
-          petRef.current!.position.z * petRef.current!.position.z
-        );
-        
-        // Если вышел, возвращаем его внутрь арены
-        if (distanceFromCenter > arenaSize) {
-          const directionToCenter = new Vector3(
-            -petRef.current!.position.x, 
-            0, 
-            -petRef.current!.position.z
-          ).normalize();
-          
-          // Корректируем позицию, чтобы вернуться внутрь арены
-          petRef.current!.position.x = directionToCenter.x * -arenaSize * 0.95;
-          petRef.current!.position.z = directionToCenter.z * -arenaSize * 0.95;
-          
-          // Меняем целевую позицию к центру арены
-          targetPosition.current.copy(new Vector3(0, 0, 0)); 
-        }
-        
         petRef.current!.position.x = Math.max(-arenaSize, Math.min(arenaSize, petRef.current!.position.x));
         petRef.current!.position.z = Math.max(-arenaSize, Math.min(arenaSize, petRef.current!.position.z));
       }
@@ -291,8 +383,8 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
     // Обновляем позицию питомца
     petPosition.current.copy(petRef.current!.position);
     
-    // Передаем обновленную позицию и направление для мини-карты
-    if (updatePosition) {
+    // Передаем обновленную позицию и направление для мини-карты, но реже в режиме низкой производительности
+    if (updatePosition && frameCounter.current % (LOW_PERFORMANCE_MODE.current ? 5 : 2) === 0) {
       // Определяем направление взгляда питомца из его поворота
       const petDirection = new THREE.Vector3(0, 0, 1)
         .applyAxisAngle(new THREE.Vector3(0, 1, 0), petRef.current!.rotation.y);
@@ -301,7 +393,7 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
     }
   });
   
-  // Режим охоты: атакуем и преследуем зомби
+  // Режим охоты: атакуем и преследуем зомби, но с упрощенной логикой
   const handleHuntMode = (zombie: ZombieTarget, now: number) => {
     if (zombie.distance < ATTACK_RANGE) {
       // Зомби в пределах атаки, атакуем
@@ -329,27 +421,12 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
         setTargetZombieId(zombie.id);
       }
       
-      // Создаем более естественное преследование, избегая телепортации
-      // Устанавливаем цель чуть впереди зомби, учитывая его движение
-      const zombieObject = scene.children.find(child => 
-        child.userData && child.userData.isZombie && child.userData.id === zombie.id
-      );
-      
-      if (zombieObject && zombieObject.userData.velocity) {
-        // Предугадываем движение зомби для интерсепции
-        const zombieVelocity = zombieObject.userData.velocity;
-        const interceptPoint = zombie.position.clone().add(
-          new Vector3(zombieVelocity.x, 0, zombieVelocity.z).multiplyScalar(0.5)
-        );
-        targetPosition.current.copy(interceptPoint);
-      } else {
-        // Если нет информации о скорости, просто бежим к текущей позиции зомби
-        targetPosition.current.copy(zombie.position);
-      }
+      // Упрощенная логика - просто бежим к текущей позиции зомби
+      targetPosition.current.copy(zombie.position);
     }
   };
   
-  // Режим блуждания: собака свободно перемещается по карте
+  // Режим блуждания: собака свободно перемещается по карте (упрощенная версия)
   const handleWanderMode = (now: number) => {
     // Сбрасываем цель зомби, если была
     if (targetZombieId !== null) {
@@ -374,31 +451,16 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
       const petCurrentPosition = petRef.current!.position.clone();
       const potentialPosition = petCurrentPosition.clone().add(wanderOffset);
       
-      // Проверяем границы арены
-      const arenaSize = 23; // Размер арены
-      const distanceFromCenter = Math.sqrt(
-        potentialPosition.x * potentialPosition.x + 
-        potentialPosition.z * potentialPosition.z
-      );
+      // Упрощенная проверка границ
+      const arenaSize = 23;
+      potentialPosition.x = Math.max(-arenaSize, Math.min(arenaSize, potentialPosition.x));
+      potentialPosition.z = Math.max(-arenaSize, Math.min(arenaSize, potentialPosition.z));
       
-      // Если выходит за границы арены, корректируем
-      if (distanceFromCenter > arenaSize) {
-        const toCenter = new Vector3(-potentialPosition.x, 0, -potentialPosition.z).normalize();
-        
-        // Корректируем направление к центру арены
-        toCenter.x += (Math.random() - 0.5) * 0.5; // Небольшое случайное отклонение
-        toCenter.z += (Math.random() - 0.5) * 0.5;
-        toCenter.normalize();
-        
-        targetPosition.current = petCurrentPosition.clone()
-          .add(toCenter.multiplyScalar(randomDistance * 0.7));
-      } else {
-        targetPosition.current = potentialPosition;
-      }
+      targetPosition.current = potentialPosition;
     }
   };
   
-  // Режим следования: собака следует за игроком
+  // Режим следования: собака следует за игроком (упрощенная версия)
   const handleFollowMode = () => {
     // Сбрасываем цель зомби, если была
     if (targetZombieId !== null) {
@@ -408,27 +470,12 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
     const distanceToPlayer = petRef.current!.position.distanceTo(playerPosition);
     
     // Если питомец очень далеко от игрока, приближаемся к нему
-    if (distanceToPlayer > FOLLOW_DISTANCE * 3) {
-      // Вычисляем позицию за игроком
-      const camera = scene.getObjectByProperty('isCamera', true) as THREE.Camera;
+    if (distanceToPlayer > FOLLOW_DISTANCE * 2) {
+      // Позиция немного позади и сбоку от игрока
+      const offsetX = (Math.random() - 0.5) * 2; // Случайное смещение по X
+      const randomOffset = new Vector3(offsetX, 0, 2);
       
-      if (camera && camera.quaternion) {
-        // Позиция немного позади и сбоку от игрока
-        const offsetX = (Math.random() - 0.5) * 2; // Случайное смещение по X
-        const petOffset = new Vector3(offsetX, 0, 2).applyQuaternion(camera.quaternion);
-        
-        // Новая целевая позиция относительно игрока
-        targetPosition.current.copy(playerPosition).add(petOffset);
-      } else {
-        // Если камера недоступна, просто идем к игроку
-        const randomOffset = new Vector3(
-          (Math.random() - 0.5) * 2,
-          0,
-          (Math.random() - 0.5) * 2
-        ).normalize().multiplyScalar(2);
-        
-        targetPosition.current.copy(playerPosition).add(randomOffset);
-      }
+      targetPosition.current.copy(playerPosition).add(randomOffset);
     } else {
       // Если питомец близко к игроку, переключаемся на режим блуждания
       setBehaviorMode('wander');
@@ -436,62 +483,73 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
     }
   };
   
-  // Анимация хвоста
+  // Анимация хвоста (упрощенная)
   const animateTail = () => {
     if (tailRef.current) {
       // Базовое махание хвостом
       const tailWag = Math.sin(Date.now() / 200) * 0.5;
       
-      // Если атакуем, хвост более активный
-      if (isAttacking || targetZombieId !== null) {
-        tailRef.current.rotation.z = tailWag * 2;
-      } else if (behaviorMode === 'wander') {
-        // В режиме блуждания - активное махание хвостом
-        tailRef.current.rotation.z = tailWag * 1.5;
+      // В низкопроизводительном режиме упрощаем анимацию
+      if (LOW_PERFORMANCE_MODE.current) {
+        tailRef.current.rotation.z = tailWag * (isAttacking ? 1.5 : 1.0);
       } else {
-        tailRef.current.rotation.z = tailWag;
+        // Если атакуем, хвост более активный
+        if (isAttacking || targetZombieId !== null) {
+          tailRef.current.rotation.z = tailWag * 2;
+        } else if (behaviorMode === 'wander') {
+          // В режиме блуждания - активное махание хвостом
+          tailRef.current.rotation.z = tailWag * 1.5;
+        } else {
+          tailRef.current.rotation.z = tailWag;
+        }
       }
     }
   };
   
-  // Анимация головы
+  // Анимация головы (упрощенная)
   const animateHead = () => {
     if (headRef.current) {
-      // Базовое движение головой
-      const headMovement = Math.sin(Date.now() / 500) * 0.1;
-      
-      // Если атакуем, голова более активная
-      if (isAttacking) {
-        headRef.current.rotation.x = 0.2 + Math.sin(Date.now() / 100) * 0.3;
-      } else if (targetZombieId !== null) {
-        // Если преследуем зомби, голова смотрит вперед
-        headRef.current.rotation.x = 0.1 + headMovement / 2;
-      } else if (behaviorMode === 'wander') {
-        // В режиме блуждания - оглядывается по сторонам
-        headRef.current.rotation.x = headMovement;
-        headRef.current.rotation.y = Math.sin(Date.now() / 1200) * 0.2;
+      // В низкопроизводительном режиме упрощаем анимацию
+      if (LOW_PERFORMANCE_MODE.current) {
+        // Упрощенная анимация
+        const headMovement = Math.sin(Date.now() / 500) * 0.1;
+        headRef.current.rotation.x = isAttacking ? 0.2 : headMovement;
       } else {
-        // Обычное движение
-        headRef.current.rotation.x = headMovement;
+        // Полная анимация
+        const headMovement = Math.sin(Date.now() / 500) * 0.1;
+        
+        if (isAttacking) {
+          headRef.current.rotation.x = 0.2 + Math.sin(Date.now() / 100) * 0.3;
+        } else if (targetZombieId !== null) {
+          headRef.current.rotation.x = 0.1 + headMovement / 2;
+        } else if (behaviorMode === 'wander') {
+          headRef.current.rotation.x = headMovement;
+          headRef.current.rotation.y = Math.sin(Date.now() / 1200) * 0.2;
+        } else {
+          headRef.current.rotation.x = headMovement;
+        }
       }
     }
   };
   
-  // Анимация челюсти (для укуса)
+  // Анимация челюсти (для укуса) (упрощенная)
   const animateJaw = () => {
     if (jawRef.current) {
-      if (isAttacking) {
-        // Анимация укуса: челюсть открывается и закрывается быстро
-        jawRef.current.rotation.x = 0.3 + Math.sin(Date.now() / 30) * 0.4; 
-      } else if (behaviorMode === 'hunt' && targetZombieId !== null) {
-        // В режиме охоты челюсть слегка приоткрыта
-        jawRef.current.rotation.x = 0.2;
-      } else if (Date.now() - lastBarkTime.current < 300) {
-        // Анимация лая
-        jawRef.current.rotation.x = 0.3;
+      // В низкопроизводительном режиме упрощаем анимацию
+      if (LOW_PERFORMANCE_MODE.current) {
+        // Упрощенная анимация
+        jawRef.current.rotation.x = isAttacking ? 0.3 : 0;
       } else {
-        // Обычное состояние - челюсть закрыта
-        jawRef.current.rotation.x = 0;
+        // Полная анимация
+        if (isAttacking) {
+          jawRef.current.rotation.x = 0.3 + Math.sin(Date.now() / 30) * 0.4; 
+        } else if (behaviorMode === 'hunt' && targetZombieId !== null) {
+          jawRef.current.rotation.x = 0.2;
+        } else if (Date.now() - lastBarkTime.current < 300) {
+          jawRef.current.rotation.x = 0.3;
+        } else {
+          jawRef.current.rotation.x = 0;
+        }
       }
     }
   };

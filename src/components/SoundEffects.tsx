@@ -28,35 +28,55 @@ const SoundEffects = forwardRef<SoundEffectsRef, SoundEffectsProps>(
     const playDogBark = () => {
       if (isEnabled && dogBarkRef.current) {
         dogBarkRef.current.currentTime = 0;
-        dogBarkRef.current.play().catch(err => console.log('Ошибка воспроизведения звука:', err));
+        dogBarkRef.current.play().catch(err => {
+          console.log('Ошибка воспроизведения звука лая:', err);
+          // Пытаемся загрузить звук еще раз с другого пути
+          dogBarkRef.current!.src = '/assets/sounds/dog_bark.mp3';
+        });
       }
     };
 
     const playDogBite = () => {
       if (isEnabled && dogBiteRef.current) {
         dogBiteRef.current.currentTime = 0;
-        dogBiteRef.current.play().catch(err => console.log('Ошибка воспроизведения звука:', err));
+        dogBiteRef.current.play().catch(err => {
+          console.log('Ошибка воспроизведения звука укуса:', err);
+          // Пытаемся загрузить звук еще раз с другого пути
+          dogBiteRef.current!.src = '/assets/sounds/dog_bite.mp3';
+        });
       }
     };
 
     const playGunshot = () => {
       if (isEnabled && gunshotRef.current) {
         gunshotRef.current.currentTime = 0;
-        gunshotRef.current.play().catch(err => console.log('Ошибка воспроизведения звука:', err));
+        gunshotRef.current.play().catch(err => {
+          console.log('Ошибка воспроизведения звука выстрела:', err);
+          // Пытаемся загрузить звук еще раз с другого пути
+          gunshotRef.current!.src = '/assets/sounds/gunshot.mp3';
+        });
       }
     };
 
     const playZombieHurt = () => {
       if (isEnabled && zombieHurtRef.current) {
         zombieHurtRef.current.currentTime = 0;
-        zombieHurtRef.current.play().catch(err => console.log('Ошибка воспроизведения звука:', err));
+        zombieHurtRef.current.play().catch(err => {
+          console.log('Ошибка воспроизведения звука зомби:', err);
+          // Пытаемся загрузить звук еще раз с другого пути
+          zombieHurtRef.current!.src = '/assets/sounds/zombie_hurt.mp3';
+        });
       }
     };
 
     const playZombieDeath = () => {
       if (isEnabled && zombieDeathRef.current) {
         zombieDeathRef.current.currentTime = 0;
-        zombieDeathRef.current.play().catch(err => console.log('Ошибка воспроизведения звука:', err));
+        zombieDeathRef.current.play().catch(err => {
+          console.log('Ошибка воспроизведения звука смерти зомби:', err);
+          // Пытаемся загрузить звук еще раз с другого пути
+          zombieDeathRef.current!.src = '/assets/sounds/zombie_death.mp3';
+        });
       }
     };
 

@@ -6,8 +6,13 @@ import { v4 as uuidv4 } from 'uuid';
 
 interface ZombieData {
   id: string;
-  position?: Vector3;
+  position: Vector3;
   health: number;
+  isDying: boolean;
+  dyingStartTime: number;
+  speed: number;
+  healthBar: Group | null;
+  coloredMaterial?: THREE.MeshPhongMaterial;
 }
 
 interface ZombiesProps {
@@ -29,7 +34,8 @@ interface Zombie {
   isDying: boolean;
   dyingStartTime: number;
   speed: number;
-  healthBar: Group;
+  healthBar: Group | null;
+  coloredMaterial?: THREE.MeshPhongMaterial;
 }
 
 // Интерфейс для анимации предупреждения о зомби
@@ -38,6 +44,206 @@ interface ZombieWarning {
   position: Vector3;
   startTime: number;
   mesh: Group;
+}
+
+// Глобальный счетчик инстансов зомби для отслеживания потенциальных утечек
+let totalZombiesCreated = 0;
+let totalZombiesRemoved = 0;
+
+// Система пулинга объектов для предотвращения частых операций создания/удаления
+class ObjectPool<T> {
+  private pool: T[] = [];
+  private createFn: () => T;
+  private resetFn: (item: T) => void;
+  private maxSize: number;
+
+  constructor(createFn: () => T, resetFn: (item: T) => void, initialSize: number = 0, maxSize: number = 100) {
+    this.createFn = createFn;
+    this.resetFn = resetFn;
+    this.maxSize = maxSize;
+
+    // Предварительное создание объектов
+    for (let i = 0; i < initialSize; i++) {
+      this.pool.push(this.createFn());
+    }
+  }
+
+  // Получение объекта из пула или создание нового
+  get(): T {
+    if (this.pool.length > 0) {
+      return this.pool.pop()!;
+    }
+    return this.createFn();
+  }
+
+  // Возврат объекта в пул с его сбросом
+  release(item: T): void {
+    if (this.pool.length < this.maxSize) {
+      this.resetFn(item);
+      this.pool.push(item);
+    }
+    // Если пул заполнен, объект будет утилизирован сборщиком мусора
+  }
+
+  // Очистка всего пула
+  clear(): void {
+    this.pool = [];
+  }
+
+  // Получение текущего размера пула
+  size(): number {
+    return this.pool.length;
+  }
+}
+
+// Cached Geometries & Materials
+
+// For Health Bar
+const healthBarBackgroundGeometry = new PlaneGeometry(1, 0.1);
+const healthBarForegroundGeometry = new PlaneGeometry(1, 0.1); // Initial full health, will be scaled
+const healthBarBackgroundMaterial = new MeshPhongMaterial({
+  color: 0xff0000,
+  depthTest: false,
+  transparent: true,
+  opacity: 0.8
+});
+const healthBarForegroundMaterial = new MeshPhongMaterial({
+  color: 0x00ff00,
+  depthTest: false,
+  transparent: true,
+  opacity: 0.8
+});
+
+// For Zombie Parts
+const zombieBodyGeometry = new THREE.CylinderGeometry(0.6, 0.5, 1.8, 8);
+const zombieHeadGeometry = new SphereGeometry(0.5, 8, 8);
+const zombieArmGeometry = new THREE.CylinderGeometry(0.2, 0.15, 1.3, 6);
+const zombieEyeGeometry = new SphereGeometry(0.12, 8, 8);
+const zombieMouthGeometry = new BoxGeometry(0.3, 0.05, 0.05);
+
+const baseZombieMaterial = new MeshPhongMaterial({
+  shininess: 10,
+  flatShading: true
+  // Color will be set on cloned material
+});
+const zombieEyeMaterial = new MeshPhongMaterial({
+  color: 0x000000,
+  shininess: 20,
+  emissive: 0x330000,
+  emissiveIntensity: 0.3
+});
+const zombieMouthMaterial = new MeshPhongMaterial({ color: 0x330000 });
+
+// For Zombie Warning
+const warningPlaneGeometry = new PlaneGeometry(3, 3);
+const warningInnerCircleGeometry = new PlaneGeometry(1.5, 1.5);
+const warningLightPillarGeometry = new THREE.CylinderGeometry(0.2, 0.5, 5, 8);
+
+// Materials for warnings will be cloned as their opacity/color is animated per instance
+const baseWarningPlaneMaterial = new MeshBasicMaterial({
+  color: 0xff0000,
+  transparent: true,
+  opacity: 0.5,
+  side: THREE.DoubleSide
+});
+const baseWarningInnerCircleMaterial = new MeshBasicMaterial({
+  color: 0xffff00,
+  transparent: true,
+  opacity: 0.7,
+  side: THREE.DoubleSide
+});
+const baseWarningLightPillarMaterial = new MeshBasicMaterial({
+  color: 0xff0000,
+  transparent: true,
+  opacity: 0.3
+});
+
+// Класс для быстрого поиска соседей в пространстве (пространственное хеширование)
+class SpatialHashGrid {
+  private cellSize: number;
+  private cells: Map<string, Set<string>>;
+  
+  constructor(cellSize: number = 5) {
+    this.cellSize = cellSize;
+    this.cells = new Map();
+  }
+  
+  // Получение ключа ячейки по позиции
+  private getKey(position: Vector3): string {
+    const x = Math.floor(position.x / this.cellSize);
+    const z = Math.floor(position.z / this.cellSize);
+    return `${x},${z}`;
+  }
+  
+  // Добавление объекта в хеш-сетку
+  add(id: string, position: Vector3): void {
+    const key = this.getKey(position);
+    if (!this.cells.has(key)) {
+      this.cells.set(key, new Set());
+    }
+    this.cells.get(key)!.add(id);
+  }
+  
+  // Удаление объекта из сетки
+  remove(id: string, position: Vector3): void {
+    const key = this.getKey(position);
+    if (this.cells.has(key)) {
+      this.cells.get(key)!.delete(id);
+      if (this.cells.get(key)!.size === 0) {
+        this.cells.delete(key);
+      }
+    }
+  }
+  
+  // Поиск соседей в ячейке и соседних ячейках
+  findNearby(position: Vector3, radius: number = 2): string[] {
+    const result: string[] = [];
+    const cellX = Math.floor(position.x / this.cellSize);
+    const cellZ = Math.floor(position.z / this.cellSize);
+    
+    // Определяем радиус поиска в ячейках
+    const cellRadius = Math.ceil(radius / this.cellSize);
+    
+    // Проверяем ячейки в пределах радиуса
+    for (let x = cellX - cellRadius; x <= cellX + cellRadius; x++) {
+      for (let z = cellZ - cellRadius; z <= cellZ + cellRadius; z++) {
+        const key = `${x},${z}`;
+        if (this.cells.has(key)) {
+          for (const id of this.cells.get(key)!) {
+            result.push(id);
+          }
+        }
+      }
+    }
+    
+    return result;
+  }
+  
+  // Очистка сетки
+  clear(): void {
+    this.cells.clear();
+  }
+  
+  // Обновление позиции объекта
+  update(id: string, oldPosition: Vector3, newPosition: Vector3): void {
+    const oldKey = this.getKey(oldPosition);
+    const newKey = this.getKey(newPosition);
+    
+    if (oldKey !== newKey) {
+      // Если объект перешел в новую ячейку, перемещаем его
+      if (this.cells.has(oldKey)) {
+        this.cells.get(oldKey)!.delete(id);
+        if (this.cells.get(oldKey)!.size === 0) {
+          this.cells.delete(oldKey);
+        }
+      }
+      
+      if (!this.cells.has(newKey)) {
+        this.cells.set(newKey, new Set());
+      }
+      this.cells.get(newKey)!.add(id);
+    }
+  }
 }
 
 // Функция для получения случайной позиции у стены арены с указанием стороны
@@ -83,6 +289,19 @@ function getZombieColorByHealth(health: number): THREE.Color {
   }
 }
 
+// Функция для получения N-го числа Фибоначчи
+function fibonacci(n: number): number {
+  if (n <= 1) return n;
+  
+  let a = 0, b = 1;
+  for (let i = 2; i <= n; i++) {
+    const temp = a + b;
+    a = b;
+    b = temp;
+  }
+  return b;
+}
+
 const Zombies: React.FC<ZombiesProps> = ({
   playerPosition,
   zombies,
@@ -99,35 +318,470 @@ const Zombies: React.FC<ZombiesProps> = ({
   const baseZombieSpeed = useRef<number>(3); // Увеличиваем начальную базовую скорость (было 2)
   const zombieWarnings = useRef<{ [key: string]: ZombieWarning }>({});
   
+  // Пул для переиспользования объектов зомби - добавляем начальное значение null
+  const zombiePoolRef = useRef<ObjectPool<Group> | null>(null);
+  const warningPoolRef = useRef<ObjectPool<Group> | null>(null);
+  
+  // Только для экстренных случаев - принудительное ограничение
+  const HARD_MAX_ZOMBIES_LIMIT = 30; // Жесткое ограничение количества зомби независимо от других факторов
+  
   // Refs to accumulate changes for batch update
   const zombiesToAddRef = useRef<ZombieData[]>([]);
   const zombiesToRemoveRef = useRef<string[]>([]);
   const zombiesToUpdateRef = useRef<Partial<ZombieData>[]>([]); // Store updates like health
   const [needsUpdate, setNeedsUpdate] = useState(false);
   
+  // Для оптимизации поиска соседей зомби
+  const spatialGrid = useRef<SpatialHashGrid>(new SpatialHashGrid(5));
+  const zombiePositions = useRef<{ [key: string]: Vector3 }>({});
+  
+  // Для оптимизации calculateZombieDirection
+  const frameCount = useRef<number>(0);
+  const separationForces = useRef<{ [key: string]: Vector3 }>({});
+  const neighborCounts = useRef<{ [key: string]: number }>({});
+  
+  // Для системы Фибоначчи и волн
+  const gameStartTime = useRef<number>(Date.now());
+  const lastWaveTime = useRef<number>(Date.now());
+  const nextWaveInterval = useRef<number>(60000); // 1 минута между волнами
+  const spawnBurst = useRef<number>(0); // Количество зомби для создания в текущей волне
+  const spawnBurstRemaining = useRef<number>(0); // Сколько осталось создать в текущей волне
+  const burstSpawnInterval = useRef<number>(500); // Интервал между спавнами в волне
+  const lastBurstSpawnTime = useRef<number>(0);
+  
+  // Константы для оптимизации
+  const SEPARATION_UPDATE_FREQUENCY = 10; // Обновлять разделение каждые N кадров
+  const ZOMBIE_UPDATE_BATCH_SIZE = 15; // Еще уменьшаем количество обрабатываемых зомби за кадр 
+  const PERFORMANCE_MONITOR_INTERVAL = 20; // Интервал мониторинга производительности (кадры)
+  
+  // Для контроля производительности
+  const fpsHistory = useRef<number[]>([]);
+  const lastFrameTime = useRef<number>(0);
+  const dynamicSpawnInterval = useRef<number>(2000); // Начальное значение спавна (2 секунды)
+  const averageFps = useRef<number>(60); // Средний FPS для динамической адаптации
+  const lowPerformanceMode = useRef<boolean>(false); // Режим низкой производительности
+  const criticalPerformanceMode = useRef<boolean>(false); // Режим критически низкой производительности
+  const ultraLowGraphicsMode = useRef<boolean>(false); // Режим ультра-низкой графики - критически упрощенные объекты
+  
+  // Инициализация пулов объектов при монтировании компонента
+  useEffect(() => {
+    // Создаем простую группу для зомби
+    const createZombieGroup = (): Group => {
+      const group = new Group();
+      // Не добавляем никаких элементов, они будут добавлены при использовании
+      return group;
+    };
+    
+    // Сброс группы зомби перед возвратом в пул
+    const resetZombieGroup = (group: Group): void => {
+      // Удаляем все дочерние элементы
+      while (group.children.length > 0) {
+        const child = group.children[0];
+        group.remove(child);
+        
+        // Освобождаем ресурсы для материалов и геометрий
+        if (child instanceof Mesh) {
+          if (child.material instanceof MeshPhongMaterial || 
+              child.material instanceof MeshBasicMaterial) {
+            child.material.dispose();
+          }
+          if (child.geometry) {
+            child.geometry.dispose();
+          }
+        }
+      }
+      
+      // Сбрасываем позицию и поворот
+      group.position.set(0, 0, 0);
+      group.rotation.set(0, 0, 0);
+      
+      // Сбрасываем userData
+      group.userData = {};
+    };
+    
+    // Создаем простую группу для предупреждений
+    const createWarningGroup = (): Group => {
+      const group = new Group();
+      return group;
+    };
+    
+    // Сброс группы предупреждений перед возвратом в пул
+    const resetWarningGroup = (group: Group): void => {
+      // Удаляем все дочерние элементы
+      while (group.children.length > 0) {
+        const child = group.children[0];
+        group.remove(child);
+        
+        if (child instanceof Mesh) {
+          if (child.material instanceof MeshBasicMaterial) {
+            child.material.dispose();
+          }
+          if (child.geometry) {
+            child.geometry.dispose();
+          }
+        }
+      }
+      
+      // Сбрасываем позицию и поворот с правильными аргументами
+      group.position.set(0, 0, 0);
+      group.rotation.set(0, 0, 0);
+      
+      // Сбрасываем userData
+      group.userData = {};
+    };
+    
+    // Создаем пулы с начальными объектами
+    zombiePoolRef.current = new ObjectPool<Group>(
+      createZombieGroup,
+      resetZombieGroup,
+      5, // Начальный размер пула 
+      30 // Максимальный размер пула
+    );
+    
+    warningPoolRef.current = new ObjectPool<Group>(
+      createWarningGroup,
+      resetWarningGroup,
+      5, // Начальный размер пула
+      20 // Максимальный размер пула
+    );
+    
+    // Для мобильных устройств или низкой производительности сразу активируем режим низкой графики
+    if (window.innerWidth < 768 || window.navigator.userAgent.includes('Mobile')) {
+      lowPerformanceMode.current = true;
+      console.log('Мобильное устройство обнаружено, включен режим низкой производительности');
+    }
+    
+    // Для очень слабых устройств включаем ультра-низкую графику
+    const gl = document.createElement('canvas').getContext('webgl');
+    if (gl) {
+      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      if (debugInfo) {
+        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+        // Если это слабые встроенные GPU, включаем ультра-низкую графику
+        if (renderer.includes('Intel') || 
+            renderer.includes('Mesa') || 
+            renderer.includes('Integrated') ||
+            renderer.includes('Apple GPU')) {
+          ultraLowGraphicsMode.current = true;
+          lowPerformanceMode.current = true;
+          console.log('Обнаружена встроенная графика, включен режим ультра-низкой графики');
+        }
+      }
+    }
+    
+    // Устанавливаем проверку на утечки памяти 
+    const intervalId = setInterval(() => {
+      console.log(`Zомби статистика: создано=${totalZombiesCreated}, удалено=${totalZombiesRemoved}, в пуле=${zombiePoolRef.current?.size() || 0}, активных=${Object.keys(zombieRefs.current).length}`);
+    }, 10000);
+    
+    return () => {
+      // При размонтировании очищаем пулы
+      zombiePoolRef.current?.clear();
+      warningPoolRef.current?.clear();
+      
+      // Удаляем всех зомби из сцены
+      Object.values(zombieRefs.current).forEach(zombie => {
+        scene.remove(zombie.mesh);
+        
+        // Освобождаем ресурсы
+        zombie.mesh.traverse((child) => {
+          if (child instanceof Mesh) {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach(material => material.dispose());
+              } else {
+                child.material.dispose();
+              }
+            }
+          }
+        });
+      });
+      
+      // Удаляем все предупреждения о зомби
+      Object.values(zombieWarnings.current).forEach(warning => {
+        scene.remove(warning.mesh);
+        
+        // Освобождаем ресурсы
+        warning.mesh.traverse((child) => {
+          if (child instanceof Mesh) {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach(material => material.dispose());
+              } else {
+                child.material.dispose();
+              }
+            }
+          }
+        });
+      });
+      
+      // Очищаем пространственную сетку
+      spatialGrid.current.clear();
+      
+      // Очищаем интервал
+      clearInterval(intervalId);
+      
+      // Очищаем данные о зомби
+      zombieRefs.current = {};
+      zombieWarnings.current = {};
+      zombiePositions.current = {};
+      separationForces.current = {};
+      neighborCounts.current = {};
+    };
+  }, [scene]);
+  
+  // Создание зомби с использованием пула объектов
+  const createZombie = (position: Vector3) => {
+    // Проверяем, не превышен ли жесткий лимит зомби
+    const currentZombieCount = Object.keys(zombieRefs.current).length;
+    if (currentZombieCount >= HARD_MAX_ZOMBIES_LIMIT) {
+      console.log(`Достигнут жесткий лимит зомби (${currentZombieCount}/${HARD_MAX_ZOMBIES_LIMIT}), отменяем создание`);
+      return null;
+    }
+    
+    const id = uuidv4();
+    totalZombiesCreated++;
+    
+    // Берем группу из пула или создаем новую
+    const zombieGroup = zombiePoolRef.current?.get() || new Group();
+    
+    const initialHealth = 100;
+    // Клонируем базовый материал для частей, меняющих цвет
+    const coloredBodyMaterial = baseZombieMaterial.clone() as THREE.MeshPhongMaterial;
+    coloredBodyMaterial.color.set(getZombieColorByHealth(initialHealth));
+    
+    // Используем упрощенную геометрию для всех режимов 
+    if (ultraLowGraphicsMode.current) {
+      // Ультра-упрощенная версия - просто куб и сфера
+      const body = new Mesh(
+        new BoxGeometry(1, 2, 1),
+        coloredBodyMaterial
+      );
+      body.position.set(0, 1.0, 0);
+      zombieGroup.add(body);
+    } else if (criticalPerformanceMode.current || lowPerformanceMode.current) {
+      // Упрощенная версия - только основные части
+      const body = new Mesh(zombieBodyGeometry, coloredBodyMaterial);
+      body.position.set(0, 1.0, 0);
+      
+      const head = new Mesh(zombieHeadGeometry, coloredBodyMaterial);
+      head.position.set(0, 2.1, 0);
+      
+      zombieGroup.add(body);
+      zombieGroup.add(head);
+    } else {
+      // Стандартная версия с более детальной моделью
+      const body = new Mesh(zombieBodyGeometry, coloredBodyMaterial);
+      body.position.set(0, 1.0, 0);
+      body.castShadow = true;
+      
+      const head = new Mesh(zombieHeadGeometry, coloredBodyMaterial);
+      head.position.set(0, 2.1, 0);
+      head.scale.set(1, 1.1, 1);
+      head.castShadow = true;
+      
+      const leftArm = new Mesh(zombieArmGeometry, coloredBodyMaterial);
+      leftArm.position.set(0.8, 1.4, 0);
+      leftArm.rotation.z = Math.PI / 6;
+      
+      const rightArm = new Mesh(zombieArmGeometry, coloredBodyMaterial);
+      rightArm.position.set(-0.8, 1.4, 0);
+      rightArm.rotation.z = -Math.PI / 6;
+      
+      // Глаза
+      const leftEye = new Mesh(zombieEyeGeometry, zombieEyeMaterial);
+      leftEye.position.set(0.2, 2.2, 0.35);
+      
+      const rightEye = new Mesh(zombieEyeGeometry, zombieEyeMaterial);
+      rightEye.position.set(-0.2, 2.2, 0.35);
+      
+      // Рот
+      const mouth = new Mesh(zombieMouthGeometry, zombieMouthMaterial);
+      mouth.position.set(0, 1.95, 0.45);
+      
+      zombieGroup.add(body);
+      zombieGroup.add(head);
+      zombieGroup.add(leftArm);
+      zombieGroup.add(rightArm);
+      zombieGroup.add(leftEye);
+      zombieGroup.add(rightEye);
+      zombieGroup.add(mouth);
+    }
+    
+    // Добавляем небольшой случайный наклон для разнообразия
+    zombieGroup.rotation.x = (Math.random() - 0.5) * 0.1;
+    zombieGroup.rotation.y = Math.random() * Math.PI * 2;
+    zombieGroup.rotation.z = (Math.random() - 0.5) * 0.1;
+    
+    zombieGroup.position.copy(position);
+    zombieGroup.userData = { isZombie: true, id, health: initialHealth };
+    
+    // Создаем и добавляем полоску здоровья только если не в режиме ультра-низкой графики
+    let healthBarGroup: Group | null = null;
+    if (!ultraLowGraphicsMode.current) {
+      healthBarGroup = createHealthBar();
+      zombieGroup.add(healthBarGroup);
+    }
+    
+    // Добавляем зомби в сцену
+    scene.add(zombieGroup);
+    
+    // Добавляем зомби в пространственную сетку
+    spatialGrid.current.add(id, position.clone());
+    zombiePositions.current[id] = position.clone();
+    
+    // Создаем случайную стартовую скорость с большей вариацией
+    const zombieSpeed = getZombieSpeed() * (0.7 + Math.random() * 0.6);
+    
+    // Сохраняем ссылку на зомби
+    const zombieObj: Zombie = {
+      id,
+      mesh: zombieGroup,
+      velocity: new Vector3(0, 0, 0),
+      lastDamageTime: 0,
+      health: initialHealth,
+      isDying: false,
+      dyingStartTime: 0,
+      speed: zombieSpeed,
+      healthBar: healthBarGroup,
+      coloredMaterial: coloredBodyMaterial
+    };
+    
+    // Логируем создание зомби
+    console.log(`Создан зомби ${id} с позицией ${position.x.toFixed(2)}, ${position.z.toFixed(2)}`);
+    
+    zombieRefs.current[id] = zombieObj;
+    
+    // Accumulate zombie to add instead of calling setZombies directly
+    zombiesToAddRef.current.push({
+      id,
+      position: zombieGroup.position.clone(),
+      health: initialHealth,
+      isDying: false,
+      dyingStartTime: 0,
+      speed: zombieSpeed,
+      healthBar: healthBarGroup,
+      coloredMaterial: coloredBodyMaterial
+    });
+    setNeedsUpdate(true); // Signal that an update is needed
+    
+    return zombieObj;
+  };
+  
+  // Создание предупреждения о появлении зомби с использованием пула
+  const createZombieWarning = (position: Vector3) => {
+    const id = uuidv4();
+    
+    // Берем группу из пула или создаем новую
+    const warningGroup = warningPoolRef.current?.get() || new Group();
+    
+    // Для режима ультра-низкой графики создаем максимально упрощенное предупреждение
+    if (ultraLowGraphicsMode.current) {
+      // Только простой круг
+      const warningMesh = new Mesh(
+        new PlaneGeometry(2, 2),
+        new MeshBasicMaterial({
+          color: 0xff0000,
+          transparent: true,
+          opacity: 0.5,
+          side: THREE.DoubleSide
+        })
+      );
+      warningMesh.rotation.x = -Math.PI / 2;
+      warningMesh.position.y = 0.05;
+      warningGroup.add(warningMesh);
+    } else {
+      // Стандартное предупреждение
+      const warningMesh = new Mesh(warningPlaneGeometry, baseWarningPlaneMaterial.clone());
+      warningMesh.rotation.x = -Math.PI / 2;
+      warningMesh.position.y = 0.05;
+      
+      const innerCircleMesh = new Mesh(warningInnerCircleGeometry, baseWarningInnerCircleMaterial.clone());
+      innerCircleMesh.rotation.x = -Math.PI / 2;
+      innerCircleMesh.position.y = 0.06;
+      
+      // Световой столб только в полнофункциональном режиме
+      if (!lowPerformanceMode.current && !criticalPerformanceMode.current) {
+        const lightPillar = new Mesh(warningLightPillarGeometry, baseWarningLightPillarMaterial.clone());
+        lightPillar.position.y = 2.5;
+        warningGroup.add(lightPillar);
+      }
+      
+      warningGroup.add(warningMesh);
+      warningGroup.add(innerCircleMesh);
+    }
+    
+    warningGroup.position.copy(position);
+    
+    // Добавляем в сцену
+    scene.add(warningGroup);
+    
+    // Сохраняем предупреждение
+    const warning: ZombieWarning = {
+      id,
+      position: position.clone(),
+      startTime: Date.now(),
+      mesh: warningGroup
+    };
+    
+    zombieWarnings.current[id] = warning;
+    
+    console.log(`Создано предупреждение о зомби ${id} с позицией ${position.x.toFixed(2)}, ${position.z.toFixed(2)}`);
+    
+    return warning;
+  };
+  
+  // Удаление зомби с возвратом в пул
+  const removeZombie = (id: string) => {
+    const zombie = zombieRefs.current[id];
+    if (zombie) {
+      scene.remove(zombie.mesh);
+      
+      // Удаляем из пространственной сетки
+      if (zombiePositions.current[id]) {
+        spatialGrid.current.remove(id, zombiePositions.current[id]);
+        delete zombiePositions.current[id];
+      }
+      
+      // Возвращаем в пул объектов
+      if (zombiePoolRef.current) {
+        zombiePoolRef.current.release(zombie.mesh);
+      }
+      
+      delete zombieRefs.current[id];
+      totalZombiesRemoved++;
+      
+      // Accumulate zombie ID to remove
+      zombiesToRemoveRef.current.push(id);
+      setNeedsUpdate(true); // Signal that an update is needed
+    }
+  };
+  
+  // Удаление предупреждения о зомби с возвратом в пул
+  const removeZombieWarning = (id: string) => {
+    const warning = zombieWarnings.current[id];
+    if (warning) {
+      scene.remove(warning.mesh);
+      
+      // Возвращаем в пул объектов
+      if (warningPoolRef.current) {
+        warningPoolRef.current.release(warning.mesh);
+      }
+      
+      delete zombieWarnings.current[id];
+      console.log(`Удалено предупреждение о зомби ${id}`);
+    }
+  };
+  
   // Создание полоски здоровья для зомби
   const createHealthBar = () => {
     const healthBarGroup = new Group();
     
-    // Задний фон полоски (красный)
-    const backgroundGeometry = new PlaneGeometry(1, 0.1);
-    const backgroundMaterial = new MeshPhongMaterial({ 
-      color: 0xff0000,
-      depthTest: false, // Чтобы полоска всегда была видна
-      transparent: true,
-      opacity: 0.8
-    });
-    const background = new Mesh(backgroundGeometry, backgroundMaterial);
-    
-    // Полоска здоровья (зеленая)
-    const barGeometry = new PlaneGeometry(1, 0.1);
-    const barMaterial = new MeshPhongMaterial({ 
-      color: 0x00ff00,
-      depthTest: false, // Чтобы полоска всегда была видна  
-      transparent: true,
-      opacity: 0.8
-    });
-    const bar = new Mesh(barGeometry, barMaterial);
+    // Используем закэшированные геометрии и материалы
+    const background = new Mesh(healthBarBackgroundGeometry, healthBarBackgroundMaterial);
+    const bar = new Mesh(healthBarForegroundGeometry, healthBarForegroundMaterial); // Эта геометрия будет масштабироваться
     
     // Помещаем полоску здоровья перед фоном
     bar.position.z = 0.01;
@@ -153,326 +807,593 @@ const Zombies: React.FC<ZombiesProps> = ({
     }
     
     // Получаем зеленую полоску (второй элемент в группе)
-    const healthBar = zombie.healthBar.children[1] as THREE.Mesh;
+    const healthBarMesh = zombie.healthBar.children[1] as THREE.Mesh;
     
-    if (!healthBar || !(healthBar.geometry instanceof THREE.PlaneGeometry)) {
-      console.warn("Некорректная геометрия полоски здоровья");
+    if (!healthBarMesh) {
+      console.warn("Некорректная полоска здоровья");
       return;
     }
     
     // Обновляем ширину зеленой полоски в зависимости от здоровья
     const healthPercent = Math.max(0, zombie.health / 100);
     
-    // Удаляем старую геометрию и создаем новую с шириной, соответствующей здоровью
-    (healthBar.geometry as THREE.PlaneGeometry).dispose();
-    healthBar.geometry = new PlaneGeometry(healthPercent, 0.1);
+    // Масштабируем существующую геометрию вместо ее замены
+    healthBarMesh.scale.x = healthPercent;
     
-    // Сдвигаем полоску влево для выравнивания с начала
-    healthBar.position.x = (healthPercent - 1) / 2;
+    // Корректируем позицию, чтобы масштабирование происходило от левого края
+    // Исходная геометрия имеет ширину 1. Центр вращения находится в ее центре.
+    // Когда scale.x = 1, position.x должен быть 0.
+    // Когда scale.x = 0.5, position.x должен быть -0.25 ( (0.5-1)/2 )
+    // Когда scale.x = 0, position.x должен быть -0.5
+    healthBarMesh.position.x = (healthPercent - 1) / 2;
   };
   
-  // Создание зомби
-  const createZombie = (position: Vector3) => {
-    const id = uuidv4();
+  // Получение скорости для новых зомби на основе волны
+  const getZombieSpeed = (): number => {
+    // Базовая скорость + логарифмическое увеличение от волны
+    // Логарифм обеспечивает быстрый рост в начале и замедление в поздних волнах
+    const speedIncrease = Math.log(wave.current + 1) / Math.log(5); // Логарифм по основанию 5
+    const speed = baseZombieSpeed.current * (1 + speedIncrease * 0.5);
     
-    // Создаем группу для зомби
-    const zombie = new Group();
-    
-    // Устанавливаем начальный цвет зомби
-    const zombieColor = getZombieColorByHealth(100);
-    const material = new MeshPhongMaterial({ 
-      color: zombieColor,
-      shininess: 10, // Уменьшаем блеск для более мертвого вида
-      flatShading: true // Добавляем плоское затенение для более грубого вида
-    });
-    
-    // Создаем тело зомби (используем цилиндр для более округлой формы)
-    const bodyGeometry = new THREE.CylinderGeometry(0.6, 0.5, 1.8, 8);
-    const body = new Mesh(bodyGeometry, material.clone());
-    body.position.set(0, 1.0, 0);
-    body.castShadow = true;
-    
-    // Создаем голову зомби
-    const headGeometry = new SphereGeometry(0.5, 8, 8);
-    const headMaterial = material.clone();
-    const head = new Mesh(headGeometry, headMaterial);
-    head.position.set(0, 2.1, 0); // Немного выше для более реалистичной посадки
-    head.scale.set(1, 1.1, 1); // Слегка вытягиваем голову
-    head.castShadow = true;
-    
-    // Создаем левую руку
-    const armGeometry = new THREE.CylinderGeometry(0.2, 0.15, 1.3, 6);
-    const leftArm = new Mesh(armGeometry, material.clone());
-    leftArm.position.set(0.8, 1.4, 0); // Размещаем сбоку от тела
-    leftArm.rotation.z = Math.PI / 6; // Слегка поднимаем руку
-    leftArm.castShadow = true;
-    
-    // Создаем правую руку
-    const rightArm = new Mesh(armGeometry, material.clone());
-    rightArm.position.set(-0.8, 1.4, 0); // Размещаем сбоку от тела
-    rightArm.rotation.z = -Math.PI / 6; // Слегка поднимаем руку
-    rightArm.castShadow = true;
-    
-    // Создаем дополнительные детали для зомби
-    
-    // Глаза (пустые глазницы)
-    const eyeGeometry = new SphereGeometry(0.12, 8, 8);
-    const eyeMaterial = new MeshPhongMaterial({ 
-      color: 0x000000,
-      shininess: 20,
-      emissive: 0x330000, // Слегка светящиеся красные глаза
-      emissiveIntensity: 0.3
-    });
-    
-    const leftEye = new Mesh(eyeGeometry, eyeMaterial);
-    leftEye.position.set(0.2, 2.2, 0.35);
-    
-    const rightEye = new Mesh(eyeGeometry, eyeMaterial);
-    rightEye.position.set(-0.2, 2.2, 0.35);
-    
-    // Рот (простая линия)
-    const mouthGeometry = new BoxGeometry(0.3, 0.05, 0.05);
-    const mouthMaterial = new MeshPhongMaterial({ color: 0x330000 });
-    const mouth = new Mesh(mouthGeometry, mouthMaterial);
-    mouth.position.set(0, 1.95, 0.45);
-    
-    // Добавляем все части к зомби
-    zombie.add(body);
-    zombie.add(head);
-    zombie.add(leftArm);
-    zombie.add(rightArm);
-    zombie.add(leftEye);
-    zombie.add(rightEye);
-    zombie.add(mouth);
-    
-    // Создаем невидимый хитбокс для более точного определения попаданий
-    const hitboxGeometry = new THREE.CapsuleGeometry(1.0, 2.0, 4, 8); // Капсула лучше охватывает всю фигуру зомби
-    const hitboxMaterial = new MeshPhongMaterial({
-      color: 0xff0000,
-      transparent: true,
-      opacity: 0.0, // Полностью прозрачный
-      depthWrite: false // Не записывать в буфер глубины
-    });
-    
-    const hitbox = new Mesh(hitboxGeometry, hitboxMaterial);
-    hitbox.position.set(0, 1.5, 0); // По центру зомби
-    zombie.add(hitbox); // Добавляем хитбокс к зомби
-    
-    // Добавляем небольшой случайный наклон для разнообразия
-    zombie.rotation.x = (Math.random() - 0.5) * 0.1; // Небольшой случайный наклон вперед/назад
-    zombie.rotation.y = Math.random() * Math.PI * 2; // Случайный поворот
-    zombie.rotation.z = (Math.random() - 0.5) * 0.1; // Небольшой случайный наклон влево/вправо
-    
-    zombie.position.copy(position);
-    zombie.userData = { isZombie: true, id, health: 100 };
-    
-    // Создаем и добавляем полоску здоровья
-    const healthBarGroup = createHealthBar();
-    zombie.add(healthBarGroup);
-    
-    // Добавляем зомби в сцену
-    scene.add(zombie);
-    
-    // Создаем случайную стартовую скорость с большей вариацией
-    const zombieSpeed = baseZombieSpeed.current * (0.7 + Math.random() * 0.6);
-    
-    // Сохраняем ссылку на зомби
-    const zombieObj = {
-      id,
-      mesh: zombie,
-      velocity: new Vector3(0, 0, 0),
-      lastDamageTime: 0,
-      health: 100,
-      isDying: false,
-      dyingStartTime: 0,
-      speed: zombieSpeed,
-      healthBar: healthBarGroup
-    };
-    
-    // Логируем создание зомби
-    console.log(`Создан зомби ${id} с позицией ${position.x.toFixed(2)}, ${position.z.toFixed(2)}`);
-    
-    zombieRefs.current[id] = zombieObj;
-    
-    // Accumulate zombie to add instead of calling setZombies directly
-    zombiesToAddRef.current.push({ id, position: zombie.position.clone(), health: 100 });
-    setNeedsUpdate(true); // Signal that an update is needed
-    
-    return zombieObj;
+    // Ограничиваем максимальную скорость
+    const maxSpeed = lowPerformanceMode.current ? 7 : 10;
+    return Math.min(speed, maxSpeed);
   };
   
-  // Создание предупреждения о появлении зомби
-  const createZombieWarning = (position: Vector3) => {
-    const id = uuidv4();
+  // Спавн зомби
+  const spawnZombie = () => {
+    const now = Date.now();
     
-    // Создаем группу для предупреждения
-    const warningGroup = new Group();
+    // Получаем текущее число активных зомби (не умирающих)
+    const activeZombieCount = Object.values(zombieRefs.current)
+      .filter(zombie => !zombie.isDying).length;
     
-    // Создаем основной круг предупреждения (красный круг на земле)
-    const warningGeometry = new PlaneGeometry(3, 3);
-    const warningMaterial = new MeshBasicMaterial({
-      color: 0xff0000,
-      transparent: true,
-      opacity: 0.5,
-      side: THREE.DoubleSide
-    });
+    // Динамически вычисляем максимальное количество зомби на основе волны и Фибоначчи
+    const MAX_ZOMBIES = getMaxZombies();
     
-    const warningMesh = new Mesh(warningGeometry, warningMaterial);
-    warningMesh.rotation.x = -Math.PI / 2; // Поворачиваем, чтобы было параллельно земле
-    warningMesh.position.y = 0.05; // Чуть выше земли, чтобы избежать z-fighting
-    
-    // Добавляем внутренний круг для более заметной анимации
-    const innerCircleGeometry = new PlaneGeometry(1.5, 1.5);
-    const innerCircleMaterial = new MeshBasicMaterial({
-      color: 0xffff00, // Желтый цвет для контраста
-      transparent: true,
-      opacity: 0.7,
-      side: THREE.DoubleSide
-    });
-    
-    const innerCircleMesh = new Mesh(innerCircleGeometry, innerCircleMaterial);
-    innerCircleMesh.rotation.x = -Math.PI / 2;
-    innerCircleMesh.position.y = 0.06; // Чуть выше основного круга
-    
-    // Добавляем вертикальный "столб" света
-    const lightPillarGeometry = new THREE.CylinderGeometry(0.2, 0.5, 5, 8);
-    const lightPillarMaterial = new MeshBasicMaterial({
-      color: 0xff0000,
-      transparent: true,
-      opacity: 0.3
-    });
-    
-    const lightPillar = new Mesh(lightPillarGeometry, lightPillarMaterial);
-    lightPillar.position.y = 2.5; // Половина высоты
-    
-    // Добавляем все элементы в группу
-    warningGroup.add(warningMesh);
-    warningGroup.add(innerCircleMesh);
-    warningGroup.add(lightPillar);
-    
-    warningGroup.position.copy(position);
-    
-    // Добавляем в сцену
-    scene.add(warningGroup);
-    
-    // Сохраняем предупреждение
-    const warning: ZombieWarning = {
-      id,
-      position: position.clone(),
-      startTime: Date.now(),
-      mesh: warningGroup
-    };
-    
-    zombieWarnings.current[id] = warning;
-    
-    console.log(`Создано предупреждение о зомби ${id} с позицией ${position.x.toFixed(2)}, ${position.z.toFixed(2)}`);
-    
-    return warning;
-  };
-  
-  // Удаление зомби
-  const removeZombie = (id: string) => {
-    const zombie = zombieRefs.current[id];
-    if (zombie) {
-      scene.remove(zombie.mesh);
-      delete zombieRefs.current[id];
+    // Проверяем, не пора ли начать новую волну
+    if (now - lastWaveTime.current > nextWaveInterval.current) {
+      // Увеличиваем счетчик волны
+      wave.current++;
       
-      // Accumulate zombie ID to remove
-      zombiesToRemoveRef.current.push(id);
-      setNeedsUpdate(true); // Signal that an update is needed
+      // Запоминаем время начала новой волны
+      lastWaveTime.current = now;
+      
+      // Вычисляем размер волны (количество зомби) по Фибоначчи
+      spawnBurst.current = fibonacci(wave.current + 2); // +2 для начала с разумного числа
+      spawnBurstRemaining.current = spawnBurst.current;
+      
+      // Увеличиваем базовую скорость зомби
+      baseZombieSpeed.current = Math.min(8, baseZombieSpeed.current + 0.2);
+      
+      // Уменьшаем интервал между волнами с каждой волной (но не менее 30 секунд)
+      nextWaveInterval.current = Math.max(30000, 60000 - wave.current * 2000);
+      
+      console.log(`===== НОВАЯ ВОЛНА ${wave.current} =====`);
+      console.log(`Количество зомби: ${spawnBurst.current}`);
+      console.log(`Базовая скорость: ${baseZombieSpeed.current.toFixed(1)}`);
+      console.log(`Следующая волна через: ${(nextWaveInterval.current / 1000).toFixed(0)} секунд`);
+    }
+    
+    // Проверяем, нужно ли спавнить зомби из текущей волны
+    if (spawnBurstRemaining.current > 0 && now - lastBurstSpawnTime.current > burstSpawnInterval.current) {
+      if (activeZombieCount < MAX_ZOMBIES) {
+        // Создаем нового зомби в волне
+        const arenaSize = 24;
+        const spawnPosition = getRandomWallPosition(arenaSize);
+        
+        // Создаем предупреждение вместо зомби
+        createZombieWarning(spawnPosition);
+        
+        // Уменьшаем счетчик оставшихся зомби в волне
+        spawnBurstRemaining.current--;
+        
+        // Запоминаем время спавна
+        lastBurstSpawnTime.current = now;
+        lastSpawnTime.current = now;
+        
+        // Адаптируем интервал спавна к размеру волны: чем больше волна, тем чаще спавн
+        burstSpawnInterval.current = Math.max(200, 2000 - wave.current * 100);
+        
+        return; // Выходим после создания зомби из волны
+      }
+    }
+    
+    // Если достигнут лимит зомби, пропускаем стандартный спавн
+    if (activeZombieCount >= MAX_ZOMBIES) {
+      // Пропускаем спавн, если достигнут максимум
+      return;
+    }
+    
+    // Стандартный спавн зомби между волнами (редкий)
+    // Адаптируем интервал спавна в зависимости от количества зомби и текущей волны
+    // Чем больше волна и зомби, тем реже случайный спавн
+    const spawnInterval = dynamicSpawnInterval.current * (1 + activeZombieCount / MAX_ZOMBIES) 
+      * (1 + Math.log(wave.current + 1) / Math.log(10));
+    
+    if (now - lastSpawnTime.current > spawnInterval) {
+      lastSpawnTime.current = now;
+      
+      // Создаем предупреждение о появлении зомби
+      const arenaSize = 24;
+      const spawnPosition = getRandomWallPosition(arenaSize);
+      
+      // Создаем предупреждение вместо зомби
+      createZombieWarning(spawnPosition);
     }
   };
   
-  // Удаление предупреждения о зомби
-  const removeZombieWarning = (id: string) => {
-    const warning = zombieWarnings.current[id];
-    if (warning) {
-      scene.remove(warning.mesh);
-      delete zombieWarnings.current[id];
-      console.log(`Удалено предупреждение о зомби ${id}`);
+  // Расчет направления к игроку с учетом избегания других зомби
+  const calculateZombieDirection = (zombie: Zombie): Vector3 => {
+    // Если зомби умирает, не двигаем его
+    if (zombie.isDying) {
+      return new Vector3(0, 0, 0);
     }
+    
+    // Базовое направление к игроку - всегда рассчитываем
+    const directionToPlayer = new Vector3()
+      .subVectors(playerPosition, zombie.mesh.position)
+      .normalize();
+    
+    // Проверяем, есть ли уже рассчитанная сила отталкивания для данного зомби
+    // Если нет, создаем пустой вектор
+    if (!separationForces.current[zombie.id]) {
+      separationForces.current[zombie.id] = new Vector3();
+      neighborCounts.current[zombie.id] = 0;
+    }
+    
+    // Объединяем силы с разными весами
+    const seekWeight = 1;
+    const separationWeight = 1.5;
+    
+    // Результирующее направление
+    const direction = directionToPlayer.multiplyScalar(seekWeight);
+    
+    // Добавляем силу отталкивания, если она есть и у зомби есть соседи
+    if (separationForces.current[zombie.id] && neighborCounts.current[zombie.id] > 0) {
+      direction.add(
+        separationForces.current[zombie.id]
+          .clone()
+          .multiplyScalar(separationWeight)
+      );
+    }
+    
+    // Нормализуем конечное направление
+    return direction.normalize();
   };
-  
-  // Нанесение урона зомби
-  const damageZombie = (id: string) => {
-    const zombie = zombieRefs.current[id];
-    if (zombie && !zombie.isDying) {
-      // Запоминаем предыдущее здоровье для проверки перехода порогов
-      const previousHealth = zombie.health;
+
+  // Вынесено в отдельную функцию для оптимизации
+  const calculateSeparationForces = () => {
+    // Очищаем предыдущие силы и счетчики
+    separationForces.current = {};
+    neighborCounts.current = {};
+    
+    // Используем пространственное хеширование для быстрого нахождения соседей
+    // Перебираем только активных зомби
+    Object.values(zombieRefs.current).forEach((zombie) => {
+      if (zombie.isDying) return; // Пропускаем умирающих зомби
       
-      // Определяем источник урона (от игрока или от питомца)
-      // По умолчанию урон от игрока - 34 (100/3 ≈ 33.33, три пули должны убить зомби)
-      // Для питомца урон составляет 10
-      // Проверяем наличие флага для питомца
-      const isPetAttack = zombie.mesh.userData && zombie.mesh.userData.isPetAttack === true;
-      const damage = isPetAttack ? 10 : 34;
+      // Инициализируем силу отталкивания и счетчик соседей
+      separationForces.current[zombie.id] = new Vector3();
+      neighborCounts.current[zombie.id] = 0;
       
-      // Уменьшаем здоровье
-      zombie.health -= damage;
+      // Определяем радиус разделения
+      const separationRadius = 2;
       
-      console.log(`Зомби ${id} получил урон ${damage} от ${isPetAttack ? 'питомца' : 'игрока'}. Здоровье: ${previousHealth} -> ${zombie.health}`);
+      // Получаем позицию зомби
+      const zombiePosition = zombie.mesh.position;
       
-      // Сбрасываем флаг атаки питомца после применения урона и логирования
-      if (zombie.mesh.userData) {
-        delete zombie.mesh.userData.isPetAttack;
-      }
+      // Быстро находим потенциальных соседей через пространственную сетку
+      const nearbyZombieIds = spatialGrid.current.findNearby(zombiePosition, separationRadius);
       
-      // Обновляем здоровье зомби в userData для проверки в Player.tsx
-      if (zombie.mesh && zombie.mesh.userData) {
-        zombie.mesh.userData.health = zombie.health;
-      }
-      
-      // Обновляем полоску здоровья
-      updateHealthBar(zombie);
-      
-      // Получаем цвет зомби по его здоровью
-      const color = getZombieColorByHealth(zombie.health);
-      console.log(`Устанавливаем цвет для зомби: ${color.getHexString()}`);
-      
-      // Применяем цвет ко всем частям зомби, кроме полоски здоровья
-      zombie.mesh.children.forEach((child) => {
-        // Проверяем, что это меш, но не часть полоски здоровья
-        if (child instanceof THREE.Mesh && 
-            child.material instanceof THREE.MeshPhongMaterial && 
-            !zombie.healthBar.children.includes(child) &&
-            !(child.material as THREE.MeshPhongMaterial).transparent) { // Исключаем прозрачные материалы (глаза, рот)
+      // Обрабатываем только ближайших соседей
+      nearbyZombieIds.forEach((otherId) => {
+        if (otherId === zombie.id) return; // Пропускаем самого себя
+        
+        const otherZombie = zombieRefs.current[otherId];
+        if (!otherZombie || otherZombie.isDying) return; // Пропускаем отсутствующих или умирающих зомби
+        
+        // Вычисляем расстояние между зомби
+        const distance = zombiePosition.distanceTo(otherZombie.mesh.position);
+        
+        // Если зомби достаточно близко
+        if (distance < separationRadius) {
+          // Вектор, указывающий от другого зомби к текущему
+          const awayVector = new Vector3()
+            .subVectors(zombiePosition, otherZombie.mesh.position);
           
-          (child.material as THREE.MeshPhongMaterial).color.set(color);
+          // Нормализуем и масштабируем по расстоянию (чем ближе, тем сильнее)
+          awayVector.normalize().divideScalar(Math.max(0.1, distance));
+          
+          // Добавляем к существующей силе отталкивания
+          separationForces.current[zombie.id].add(awayVector);
+          neighborCounts.current[zombie.id]++;
         }
       });
       
-      // Если здоровье кончилось, помечаем зомби как "умирающего"
-      if (zombie.health <= 0) {
-        zombie.isDying = true;
-        zombie.dyingStartTime = Date.now();
-        
-        // Останавливаем движение зомби (он падает)
-        zombie.velocity.set(0, 0, 0);
-        
-        // Скрываем полоску здоровья
-        if (zombie.healthBar) {
-          zombie.healthBar.visible = false;
-        }
-        
-        // Сохраняем текущее направление поворота зомби (только по оси Y)
-        // Это предотвратит вращение во время падения
-        const currentYRotation = zombie.mesh.rotation.y;
-        
-        // Сбрасываем вращение по другим осям для правильного падения
-        zombie.mesh.rotation.x = 0;
-        zombie.mesh.rotation.z = 0;
-        
-        // Восстанавливаем вращение по оси Y, чтобы зомби падал в правильном направлении
-        zombie.mesh.rotation.y = currentYRotation;
-        
-        console.log(`Зомби ${id} умирает, начинаем анимацию падения`);
+      // Нормализуем силу отталкивания, если у зомби есть соседи
+      if (neighborCounts.current[zombie.id] > 0) {
+        separationForces.current[zombie.id]
+          .divideScalar(neighborCounts.current[zombie.id])
+          .normalize();
+      }
+    });
+  };
+  
+  // Обработка падения умирающих зомби
+  const processDeadZombie = (zombie: Zombie) => {
+    const now = Date.now();
+    const dyingDuration = 1000; // Уменьшаем длительность анимации падения до 1 секунды (было 1.5)
+    const elapsedTime = now - zombie.dyingStartTime;
+    
+    if (elapsedTime < dyingDuration) {
+      // Вычисляем прогресс анимации (0 - начало, 1 - конец)
+      const rotationProgress = Math.min(1, elapsedTime / dyingDuration);
+      
+      // Вращаем зомби вперед (падение), но только по оси X
+      // Сохраняем текущий поворот по осям Y и Z, меняем только X
+      const targetRotationX = Math.PI / 2; // 90 градусов (лежит на земле)
+      zombie.mesh.rotation.x = rotationProgress * targetRotationX;
+      
+      // Добавляем небольшое смещение вниз для имитации падения на землю
+      // Высота падения зависит от прогресса, вначале падает быстрее, потом медленнее
+      const fallHeight = Math.max(0, 1 - Math.pow(rotationProgress, 2));
+      zombie.mesh.position.y = fallHeight;
+      
+      return false; // Продолжаем анимацию
+    } else {
+      // Убеждаемся, что зомби лежит ровно на земле после окончания анимации
+      zombie.mesh.rotation.x = Math.PI / 2; // 90 градусов
+      zombie.mesh.position.y = 0;
+      
+      // Выключаем вращение по другим осям
+      zombie.mesh.rotation.y = zombie.mesh.rotation.y; // Сохраняем текущее значение
+      zombie.mesh.rotation.z = 0;
+      
+      // Уведомляем об удалении зомби (для учета очков)
+      if (onZombieKilled) {
+        onZombieKilled(zombie.id);
       }
       
-      // Обновляем состояние зомби в родительском компоненте (отложенно)
-      // Accumulate health update
-      zombiesToUpdateRef.current.push({ id, health: zombie.health });
-      setNeedsUpdate(true); // Signal that an update is needed
+      // Время анимации истекло, удаляем зомби
+      return true; // Готов к удалению
     }
+  };
+  
+  // Обновление зомби на каждом кадре
+  useFrame((state, delta) => {
+    if (isGameOver) return;
+    
+    // Мониторинг производительности
+    const now = performance.now();
+    if (lastFrameTime.current > 0) {
+      const frameTime = now - lastFrameTime.current;
+      const fps = 1000 / frameTime;
+      
+      // Сохраняем историю FPS
+      fpsHistory.current.push(fps);
+      if (fpsHistory.current.length > 10) {
+        fpsHistory.current.shift();
+      }
+      
+      // Каждые N кадров анализируем производительность и адаптируем параметры
+      if (frameCount.current % PERFORMANCE_MONITOR_INTERVAL === 0) {
+        // Вычисляем средний FPS
+        const avgFps = fpsHistory.current.reduce((sum, fps) => sum + fps, 0) / fpsHistory.current.length;
+        averageFps.current = avgFps;
+        
+        // Определяем режим производительности
+        const wasCritical = criticalPerformanceMode.current;
+        const wasLow = lowPerformanceMode.current;
+        const wasUltraLow = ultraLowGraphicsMode.current;
+        
+        if (avgFps < 15) {
+          // Включаем режим ультра-низкой графики при критически низком FPS
+          ultraLowGraphicsMode.current = true;
+          criticalPerformanceMode.current = true;
+          lowPerformanceMode.current = true;
+          console.log(`КРИТИЧЕСКИ НИЗКИЙ FPS (${avgFps.toFixed(0)}), активируем ультра-низкую графику`);
+          
+          // При экстремально низкой производительности удаляем большую часть зомби
+          if (!wasUltraLow) {
+            const zombiesCount = Object.keys(zombieRefs.current).length;
+            if (zombiesCount > 8) {
+              // Удаляем половину зомби для экстренного повышения производительности
+              const toRemove = Math.floor(zombiesCount * 0.5);
+              removeDistantZombies(toRemove);
+            }
+          }
+        } else if (avgFps < 20) {
+          ultraLowGraphicsMode.current = false;
+          criticalPerformanceMode.current = true;
+          lowPerformanceMode.current = true;
+          console.log(`КРИТИЧЕСКИ НИЗКИЙ FPS (${avgFps.toFixed(0)}), активируем экстренные меры`);
+          
+          // Если большое падение производительности, удаляем часть зомби
+          if (!wasCritical) {
+            const zombiesCount = Object.keys(zombieRefs.current).length;
+            if (zombiesCount > 8) {
+              // Удаляем самых дальних зомби
+              const toRemove = Math.floor(zombiesCount * 0.3); // Удаляем 30% зомби
+              removeDistantZombies(toRemove);
+            }
+          }
+        } else if (avgFps < 30) {
+          ultraLowGraphicsMode.current = false;
+          criticalPerformanceMode.current = false;
+          lowPerformanceMode.current = true;
+          if (!wasLow) {
+            console.log(`Низкий FPS (${avgFps.toFixed(0)}), активируем режим низкой производительности`);
+          }
+        } else if (avgFps > 45) {
+          ultraLowGraphicsMode.current = false;
+          criticalPerformanceMode.current = false;
+          lowPerformanceMode.current = false;
+        }
+        
+        // Адаптируем интервал спавна в зависимости от FPS
+        if (avgFps < 30) {
+          // Производительность низкая, увеличиваем интервал спавна
+          dynamicSpawnInterval.current = Math.min(5000, dynamicSpawnInterval.current * 1.3);
+          
+          // Также увеличиваем интервал между волнами
+          if (nextWaveInterval.current < 90000) {
+            nextWaveInterval.current = Math.min(90000, nextWaveInterval.current * 1.2);
+          }
+        } else if (avgFps > 50 && dynamicSpawnInterval.current > 1000) {
+          // Производительность хорошая, можем уменьшить интервал спавна
+          dynamicSpawnInterval.current = Math.max(1000, dynamicSpawnInterval.current * 0.9);
+        }
+      }
+    }
+    lastFrameTime.current = now;
+    
+    // Увеличиваем счетчик кадров
+    frameCount.current++;
+    
+    // В критическом режиме обрабатываем только каждый третий кадр для экономии CPU
+    if (criticalPerformanceMode.current && frameCount.current % 3 !== 0) {
+      return;
+    }
+    
+    // В режиме ультра-низкой графики обрабатываем каждый четвертый кадр
+    if (ultraLowGraphicsMode.current && frameCount.current % 4 !== 0) {
+      return;
+    }
+    
+    // Спавн новых зомби - выполняем только на определенных кадрах
+    if (frameCount.current % 5 === 0) {
+      spawnZombie();
+    }
+    
+    // Обновляем предупреждения о зомби только в некритичном режиме и не на каждом кадре
+    if ((!criticalPerformanceMode.current && frameCount.current % 2 === 0) || 
+        (criticalPerformanceMode.current && frameCount.current % 6 === 0)) {
+      updateZombieWarnings(delta);
+    }
+    
+    // Частота обновления сил разделения зависит от режима производительности
+    const separationFrequency = ultraLowGraphicsMode.current ? 
+      SEPARATION_UPDATE_FREQUENCY * 6 :
+      criticalPerformanceMode.current ? 
+        SEPARATION_UPDATE_FREQUENCY * 4 : 
+        lowPerformanceMode.current ? 
+          SEPARATION_UPDATE_FREQUENCY * 2 : 
+          SEPARATION_UPDATE_FREQUENCY;
+    
+    // Пересчитываем силы отталкивания только раз в separationFrequency кадров
+    if (frameCount.current % separationFrequency === 0) {
+      calculateSeparationForces();
+    }
+    
+    // Собираем данные о позициях зомби для мини-карты с пониженной частотой
+    if (updatePositions && 
+        ((!lowPerformanceMode.current && frameCount.current % 3 === 0) ||
+         (lowPerformanceMode.current && frameCount.current % 6 === 0) ||
+         (criticalPerformanceMode.current && frameCount.current % 10 === 0) ||
+         (ultraLowGraphicsMode.current && frameCount.current % 15 === 0))) {
+      
+      // Сокращаем количество данных, отправляемых для обновления
+      const positions = Object.values(zombieRefs.current)
+        // В критическом режиме отправляем только позиции ближайших зомби
+        .filter(zombie => 
+          !criticalPerformanceMode.current || 
+          zombie.mesh.position.distanceTo(playerPosition) < 15)
+        .map(zombie => {
+          // Получаем направление взгляда из поворота зомби
+          const direction = new THREE.Vector3(0, 0, 1)
+            .applyAxisAngle(new THREE.Vector3(0, 1, 0), zombie.mesh.rotation.y);
+          
+          return {
+            id: zombie.id,
+            position: zombie.mesh.position.clone(),
+            isDying: zombie.isDying,
+            direction: direction
+          };
+        });
+      
+      updatePositions(positions);
+    }
+    
+    // Получаем все активные зомби
+    const zombieIds = Object.keys(zombieRefs.current);
+    
+    // Ограничиваем количество обрабатываемых зомби за один кадр
+    const batchSize = ultraLowGraphicsMode.current ?
+      Math.max(3, Math.floor(ZOMBIE_UPDATE_BATCH_SIZE / 5)) :
+      criticalPerformanceMode.current ? 
+        Math.max(5, Math.floor(ZOMBIE_UPDATE_BATCH_SIZE / 4)) : 
+        lowPerformanceMode.current ? 
+          Math.floor(ZOMBIE_UPDATE_BATCH_SIZE / 2) : 
+          ZOMBIE_UPDATE_BATCH_SIZE;
+    
+    const startIndex = (frameCount.current * batchSize) % Math.max(1, zombieIds.length);
+    const endIndex = Math.min(startIndex + batchSize, zombieIds.length);
+    
+    // Обрабатываем только часть зомби за раз
+    for (let i = startIndex; i < endIndex; i++) {
+      const id = zombieIds[i];
+      const zombie = zombieRefs.current[id];
+      if (!zombie) continue;
+      
+      // Обрабатываем умирающих зомби отдельно и с меньшей частотой
+      if (zombie.isDying) {
+        // В критическом режиме обрабатываем умирающих зомби реже
+        if (criticalPerformanceMode.current && frameCount.current % 2 !== 0) {
+          continue;
+        }
+        
+        const shouldRemove = processDeadZombie(zombie);
+        if (shouldRemove) {
+          removeZombie(id);
+        }
+        continue; // Пропускаем дальнейшую обработку для умирающих зомби
+      }
+      
+      // Вычисляем расстояние до игрока
+      const distanceToPlayer = zombie.mesh.position.distanceTo(playerPosition);
+      
+      // Оптимизация: более редкие обновления для дальних зомби
+      if (lowPerformanceMode.current) {
+        if ((distanceToPlayer > 15 && frameCount.current % 4 !== 0) ||
+            (distanceToPlayer > 10 && frameCount.current % 3 !== 0)) {
+          continue; // Пропускаем обработку дальних зомби
+        }
+      }
+      
+      // В ультра-низком режиме пропускаем еще больше обновлений для дальних зомби
+      if (ultraLowGraphicsMode.current) {
+        if ((distanceToPlayer > 20 && frameCount.current % 10 !== 0) ||
+            (distanceToPlayer > 15 && frameCount.current % 6 !== 0) ||
+            (distanceToPlayer > 10 && frameCount.current % 3 !== 0)) {
+          continue; // Пропускаем обработку дальних зомби с разной частотой
+        }
+      }
+      
+      // Получаем направление движения
+      const direction = calculateZombieDirection(zombie);
+      
+      // Обновляем скорость
+      const speed = zombie.speed * delta;
+      zombie.velocity.copy(direction.multiplyScalar(speed));
+      
+      // Вместо сохранения неиспользуемой переменной oldPosition,
+      // сразу обновляем пространственную сетку
+      const oldPos = zombie.mesh.position.clone();
+      
+      // Обновляем позицию
+      zombie.mesh.position.add(zombie.velocity);
+      
+      // Ограничиваем в пределах арены
+      const arenaSize = 24;
+      zombie.mesh.position.x = Math.max(-arenaSize, Math.min(arenaSize, zombie.mesh.position.x));
+      zombie.mesh.position.z = Math.max(-arenaSize, Math.min(arenaSize, zombie.mesh.position.z));
+      
+      // Обновляем позицию в пространственной сетке
+      if (zombiePositions.current[id]) {
+        spatialGrid.current.update(id, oldPos, zombie.mesh.position.clone());
+        zombiePositions.current[id].copy(zombie.mesh.position);
+      }
+      
+      // Поворачиваем зомби к игроку, если он движется и находится близко
+      // Пропускаем для дальних зомби в режиме низкой производительности
+      if (zombie.velocity.length() > 0.001 && 
+          ((!lowPerformanceMode.current && distanceToPlayer < 20) || 
+          (lowPerformanceMode.current && distanceToPlayer < 15) ||
+          (criticalPerformanceMode.current && distanceToPlayer < 10))) {
+        
+        // Вычисляем направление к игроку в горизонтальной плоскости
+        const lookDirection = new Vector3(
+          playerPosition.x - zombie.mesh.position.x,
+          0, // Игнорируем Y-координату для горизонтального поворота
+          playerPosition.z - zombie.mesh.position.z
+        ).normalize();
+        
+        // Вычисляем целевой угол поворота (в радианах)
+        const targetAngle = Math.atan2(lookDirection.x, lookDirection.z);
+        
+        // Плавно поворачиваем зомби к целевому углу
+        const currentAngle = zombie.mesh.rotation.y;
+        const angleDiff = targetAngle - currentAngle;
+        
+        // Нормализуем разницу углов в диапазоне [-PI, PI]
+        let normalizedDiff = angleDiff;
+        while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
+        while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
+        
+        // Плавно интерполируем текущий угол к целевому
+        // Для низкой производительности уменьшаем плавность
+        const rotationSpeed = lowPerformanceMode.current ? 7 : 5;
+        zombie.mesh.rotation.y += normalizedDiff * Math.min(1, delta * rotationSpeed);
+      }
+      
+      // Всегда поворачиваем полоску здоровья к камере, только для живых зомби
+      // В режиме низкой производительности обновляем полоски здоровья реже
+      if (zombie.healthBar && 
+          ((!lowPerformanceMode.current && distanceToPlayer < 15 && frameCount.current % 2 === 0) || 
+           (!criticalPerformanceMode.current && distanceToPlayer < 10 && frameCount.current % 3 === 0) ||
+           (distanceToPlayer < 5))) {
+        
+        zombie.healthBar.position.set(0, 2.8, 0);
+        
+        // Убеждаемся, что полоска всегда обращена вверх
+        zombie.healthBar.rotation.x = -Math.PI / 2;
+        zombie.healthBar.rotation.y = 0;
+        zombie.healthBar.rotation.z = 0;
+      }
+      
+      // Проверяем столкновение с игроком только для ближайших зомби
+      if (distanceToPlayer < 2) {
+        const now = Date.now();
+        
+        // Если зомби близко к игроку и достаточно времени прошло с последнего удара
+        if (distanceToPlayer < 1.5 && now - zombie.lastDamageTime > 1000) {
+          zombie.lastDamageTime = now;
+          onPlayerDamage(10); // Наносим урон игроку
+        }
+      }
+    }
+    
+    // Принудительная очистка неиспользуемых ресурсов
+    if (frameCount.current % 3000 === 0) {
+      // Очищаем рендерер для освобождения WebGL ресурсов
+      if (state.gl) {
+        state.gl.renderLists.dispose();
+        // Подсказка для сборщика мусора
+        if (typeof window !== 'undefined' && (window as any).gc) {
+          try {
+            (window as any).gc();
+            console.log("Принудительная очистка памяти выполнена");
+          } catch (e) {
+            // GC недоступен
+          }
+        }
+      }
+    }
+  });
+  
+  // Удаление самых дальних зомби для повышения производительности
+  const removeDistantZombies = (count: number) => {
+    // Получаем активных зомби
+    const activeZombies = Object.values(zombieRefs.current)
+      .filter(zombie => !zombie.isDying);
+    
+    if (activeZombies.length <= count) return; // Если зомби слишком мало, не удаляем
+    
+    // Сортируем зомби по расстоянию от игрока (от дальних к ближним)
+    const sortedZombies = activeZombies
+      .map(zombie => ({
+        id: zombie.id,
+        distance: zombie.mesh.position.distanceTo(playerPosition)
+      }))
+      .sort((a, b) => b.distance - a.distance); // Сортировка по убыванию (сначала дальние)
+    
+    // Удаляем count самых дальних зомби
+    for (let i = 0; i < count && i < sortedZombies.length; i++) {
+      removeZombie(sortedZombies[i].id);
+    }
+    
+    console.log(`Удалено ${count} зомби для повышения производительности`);
   };
   
   // Обновление предупреждений о зомби
@@ -536,282 +1457,120 @@ const Zombies: React.FC<ZombiesProps> = ({
     });
   };
   
-  // Спавн зомби
-  const spawnZombie = () => {
-    const now = Date.now();
+  // Динамический лимит зомби на основе волны и производительности
+  const getMaxZombies = (): number => {
+    // Получаем число зомби по Фибоначчи для текущей волны, но ограничиваем максимумом
+    const fibMaxZombies = fibonacci(wave.current + 3); // +3 вместо +4 для меньшего начального значения
     
-    // Стандартный спавн зомби
-    // Изменяем интервал спавна зомби на 2 секунды
-    const spawnInterval = 2000; // Было 1000 (1 секунда)
+    // Жестко ограничиваем максимальное количество зомби в зависимости от производительности
+    let maxAllowed = 25; // Стандартное значение снижено с 70 до 25
     
-    if (now - lastSpawnTime.current > spawnInterval) {
-      lastSpawnTime.current = now;
-      
-      // Создаем предупреждение о появлении зомби
-      const arenaSize = 24;
-      const spawnPosition = getRandomWallPosition(arenaSize);
-      
-      // Создаем предупреждение вместо зомби
-      createZombieWarning(spawnPosition);
-      
-      // Увеличиваем волну каждые 10 спавнов (20 секунд)
-      if (wave.current % 10 === 0) {
-        baseZombieSpeed.current = Math.min(7, baseZombieSpeed.current + 0.4);
-        console.log(`Волна ${wave.current}: скорость зомби увеличена до ${baseZombieSpeed.current.toFixed(1)}`);
-      }
-      
-      wave.current++;
-    }
-  };
-  
-  // Расчет направления к игроку с учетом избегания других зомби
-  const calculateZombieDirection = (zombie: Zombie): Vector3 => {
-    // Если зомби умирает, не двигаем его
-    if (zombie.isDying) {
-      return new Vector3(0, 0, 0);
-    }
-    
-    // Базовое направление к игроку
-    const directionToPlayer = new Vector3()
-      .subVectors(playerPosition, zombie.mesh.position)
-      .normalize();
-    
-    // Отталкивание от других зомби
-    const separationForce = new Vector3();
-    const separationRadius = 2;
-    let neighborCount = 0;
-    
-    // Проверяем каждого зомби для разделения
-    Object.values(zombieRefs.current).forEach(otherZombie => {
-      if (otherZombie.id !== zombie.id && !otherZombie.isDying) {
-        const distance = zombie.mesh.position.distanceTo(otherZombie.mesh.position);
-        
-        if (distance < separationRadius) {
-          // Вектор, указывающий от другого зомби к текущему
-          const awayVector = new Vector3()
-            .subVectors(zombie.mesh.position, otherZombie.mesh.position);
-          
-          // Нормализуем и масштабируем по расстоянию (чем ближе, тем сильнее)
-          awayVector.normalize().divideScalar(Math.max(0.1, distance));
-          
-          separationForce.add(awayVector);
-          neighborCount++;
-        }
-      }
-    });
-    
-    // Нормализуем направление разделения, если есть соседи
-    if (neighborCount > 0) {
-      separationForce.divideScalar(neighborCount);
-      separationForce.normalize();
-    }
-    
-    // Объединяем силы с разными весами
-    const seekWeight = 1;
-    const separationWeight = 1.5;
-    
-    // Результирующее направление
-    const direction = directionToPlayer.multiplyScalar(seekWeight)
-      .add(separationForce.multiplyScalar(separationWeight))
-      .normalize();
-    
-    return direction;
-  };
-  
-  // Обработка падения умирающих зомби
-  const processDeadZombie = (zombie: Zombie) => {
-    const now = Date.now();
-    const dyingDuration = 1000; // Уменьшаем длительность анимации падения до 1 секунды (было 1.5)
-    const elapsedTime = now - zombie.dyingStartTime;
-    
-    if (elapsedTime < dyingDuration) {
-      // Вычисляем прогресс анимации (0 - начало, 1 - конец)
-      const rotationProgress = Math.min(1, elapsedTime / dyingDuration);
-      
-      // Вращаем зомби вперед (падение), но только по оси X
-      // Сохраняем текущий поворот по осям Y и Z, меняем только X
-      const targetRotationX = Math.PI / 2; // 90 градусов (лежит на земле)
-      zombie.mesh.rotation.x = rotationProgress * targetRotationX;
-      
-      // Добавляем небольшое смещение вниз для имитации падения на землю
-      // Высота падения зависит от прогресса, вначале падает быстрее, потом медленнее
-      const fallHeight = Math.max(0, 1 - Math.pow(rotationProgress, 2));
-      zombie.mesh.position.y = fallHeight;
-      
-      return false; // Продолжаем анимацию
+    if (ultraLowGraphicsMode.current) {
+      maxAllowed = 10; // Ультра низкое значение для слабых устройств
+    } else if (criticalPerformanceMode.current) {
+      maxAllowed = 12; // Экстремальное ограничение при критически низкой производительности
+    } else if (lowPerformanceMode.current) {
+      maxAllowed = 18; // Строгое ограничение при низкой производительности
+    } else if (averageFps.current > 55) {
+      maxAllowed = 25; // Высокая производительность
+    } else if (averageFps.current > 40) {
+      maxAllowed = 20; // Средняя производительность
     } else {
-      // Убеждаемся, что зомби лежит ровно на земле после окончания анимации
-      zombie.mesh.rotation.x = Math.PI / 2; // 90 градусов
-      zombie.mesh.position.y = 0;
-      
-      // Выключаем вращение по другим осям
-      zombie.mesh.rotation.y = zombie.mesh.rotation.y; // Сохраняем текущее значение
-      zombie.mesh.rotation.z = 0;
-      
-      // Уведомляем об удалении зомби (для учета очков)
-      if (onZombieKilled) {
-        onZombieKilled(zombie.id);
-      }
-      
-      // Время анимации истекло, удаляем зомби
-      return true; // Готов к удалению
+      maxAllowed = 15; // Низкая производительность
     }
+    
+    // Возвращаем наименьшее из всех ограничений и жесткого лимита
+    return Math.min(fibMaxZombies, maxAllowed, HARD_MAX_ZOMBIES_LIMIT);
   };
   
-  // Обновление зомби на каждом кадре
-  useFrame((_, delta) => {
-    if (isGameOver) return;
-    
-    // Спавн новых зомби
-    spawnZombie();
-    
-    // Обновляем предупреждения о зомби
-    updateZombieWarnings(delta);
-    
-    // Собираем данные о позициях зомби для мини-карты
-    if (updatePositions) {
-      const positions = Object.values(zombieRefs.current).map(zombie => {
-        // Получаем направление взгляда из поворота зомби
-        const direction = new THREE.Vector3(0, 0, 1)
-          .applyAxisAngle(new THREE.Vector3(0, 1, 0), zombie.mesh.rotation.y);
-        
-        return {
-          id: zombie.id,
-          position: zombie.mesh.position.clone(),
-          isDying: zombie.isDying,
-          direction: direction // Добавляем направление взгляда
-        };
-      });
-      updatePositions(positions);
-    }
-    
-    // Обновляем каждого зомби
-    Object.keys(zombieRefs.current).forEach(id => {
-      const zombie = zombieRefs.current[id];
+  // Нанесение урона зомби
+  const damageZombie = (id: string) => {
+    const zombie = zombieRefs.current[id];
+    if (zombie && !zombie.isDying) {
+      // Запоминаем предыдущее здоровье для проверки перехода порогов
+      const previousHealth = zombie.health;
       
-      // Обрабатываем умирающих зомби отдельно
-      if (zombie.isDying) {
-        const shouldRemove = processDeadZombie(zombie);
-        if (shouldRemove) {
-          removeZombie(id);
-        }
-        return; // Пропускаем дальнейшую обработку для умирающих зомби
+      // Определяем источник урона (от игрока или от питомца)
+      // По умолчанию урон от игрока - 34 (100/3 ≈ 33.33, три пули должны убить зомби)
+      // Для питомца урон составляет 10
+      // Проверяем наличие флага для питомца
+      const isPetAttack = zombie.mesh.userData && zombie.mesh.userData.isPetAttack === true;
+      const damage = isPetAttack ? 10 : 34;
+      
+      // Уменьшаем здоровье
+      zombie.health -= damage;
+      
+      console.log(`Зомби ${id} получил урон ${damage} от ${isPetAttack ? 'питомца' : 'игрока'}. Здоровье: ${previousHealth} -> ${zombie.health}`);
+      
+      // Сбрасываем флаг атаки питомца после применения урона и логирования
+      if (zombie.mesh.userData) {
+        delete zombie.mesh.userData.isPetAttack;
       }
       
-      // Получаем направление движения
-      const direction = calculateZombieDirection(zombie);
-      
-      // Обновляем скорость
-      const speed = zombie.speed * delta;
-      zombie.velocity.copy(direction.multiplyScalar(speed));
-      
-      // Обновляем позицию
-      zombie.mesh.position.add(zombie.velocity);
-      
-      // Поворачиваем зомби к игроку, если он движется
-      if (zombie.velocity.length() > 0.001) {
-        // Вычисляем направление к игроку в горизонтальной плоскости
-        const lookDirection = new Vector3(
-          playerPosition.x - zombie.mesh.position.x,
-          0, // Игнорируем Y-координату для горизонтального поворота
-          playerPosition.z - zombie.mesh.position.z
-        ).normalize();
-        
-        // Вычисляем целевой угол поворота (в радианах)
-        const targetAngle = Math.atan2(lookDirection.x, lookDirection.z);
-        
-        // Плавно поворачиваем зомби к целевому углу
-        const currentAngle = zombie.mesh.rotation.y;
-        const angleDiff = targetAngle - currentAngle;
-        
-        // Нормализуем разницу углов в диапазоне [-PI, PI]
-        let normalizedDiff = angleDiff;
-        while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
-        while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
-        
-        // Плавно интерполируем текущий угол к целевому
-        zombie.mesh.rotation.y += normalizedDiff * Math.min(1, delta * 5); // Скорость поворота
+      // Обновляем здоровье зомби в userData для проверки в Player.tsx
+      if (zombie.mesh && zombie.mesh.userData) {
+        zombie.mesh.userData.health = zombie.health;
       }
       
-      // Всегда поворачиваем полоску здоровья к камере, только для живых зомби
+      // Обновляем полоску здоровья
       if (zombie.healthBar) {
-        // Получаем камеру из сцены
-        const camera = scene.getObjectByProperty('isCamera', true);
-        if (camera) {
-          // Для полоски здоровья важно, чтобы она всегда была видна сверху
-          // Но не нужно менять ее ориентацию при каждом кадре
-          // Достаточно обеспечить ее постоянное положение над зомби
-          zombie.healthBar.position.set(0, 2.8, 0);
-          
-          // Убеждаемся, что полоска всегда обращена вверх
-          zombie.healthBar.rotation.x = -Math.PI / 2;
-          zombie.healthBar.rotation.y = 0;
-          zombie.healthBar.rotation.z = 0;
+        updateHealthBar(zombie);
+      }
+      
+      // Получаем цвет зомби по его здоровью
+      const color = getZombieColorByHealth(zombie.health);
+      console.log(`Устанавливаем цвет для зомби: ${color.getHexString()}`);
+      
+      // Применяем цвет к основному материалу зомби напрямую
+      if (zombie.coloredMaterial) {
+        zombie.coloredMaterial.color.set(color);
+      } else {
+        // Fallback or error if material not stored, though it should be by createZombie
+        console.warn(`Colored material not found for zombie ${id}. Falling back to iterating children.`);
+        // Старый метод изменения цвета (менее эффективный)
+        zombie.mesh.children.forEach((child) => {
+          if (child instanceof THREE.Mesh &&
+              child.material instanceof THREE.MeshPhongMaterial &&
+              (!zombie.healthBar || !zombie.healthBar.children.includes(child)) &&
+              !(child.material as THREE.MeshPhongMaterial).transparent) {
+            (child.material as THREE.MeshPhongMaterial).color.set(color);
+          }
+        });
+      }
+      
+      // Если здоровье кончилось, помечаем зомби как "умирающего"
+      if (zombie.health <= 0) {
+        zombie.isDying = true;
+        zombie.dyingStartTime = Date.now();
+        
+        // Останавливаем движение зомби (он падает)
+        zombie.velocity.set(0, 0, 0);
+        
+        // Скрываем полоску здоровья
+        if (zombie.healthBar) {
+          zombie.healthBar.visible = false;
         }
+        
+        // Сохраняем текущее направление поворота зомби (только по оси Y)
+        // Это предотвратит вращение во время падения
+        const currentYRotation = zombie.mesh.rotation.y;
+        
+        // Сбрасываем вращение по другим осям для правильного падения
+        zombie.mesh.rotation.x = 0;
+        zombie.mesh.rotation.z = 0;
+        
+        // Восстанавливаем вращение по оси Y, чтобы зомби падал в правильном направлении
+        zombie.mesh.rotation.y = currentYRotation;
+        
+        console.log(`Зомби ${id} умирает, начинаем анимацию падения`);
       }
       
-      // Ограничиваем в пределах арены
-      const arenaSize = 24;
-      zombie.mesh.position.x = Math.max(-arenaSize, Math.min(arenaSize, zombie.mesh.position.x));
-      zombie.mesh.position.z = Math.max(-arenaSize, Math.min(arenaSize, zombie.mesh.position.z));
-      
-      // Проверяем столкновение с игроком
-      const distanceToPlayer = zombie.mesh.position.distanceTo(playerPosition);
-      const now = Date.now();
-      
-      // Если зомби близко к игроку и достаточно времени прошло с последнего удара
-      if (distanceToPlayer < 1.5 && now - zombie.lastDamageTime > 1000) {
-        zombie.lastDamageTime = now;
-        onPlayerDamage(10); // Наносим урон игроку
-      }
-    });
-  });
-  
-  // Экспортируем функцию для обработки попадания пули в зомби
-  useEffect(() => {
-    // Добавляем метод к userData компонента
-    scene.userData.damageZombie = (zombieId: string, isPet: boolean = false) => {
-      // Если атака от питомца, устанавливаем флаг
-      const zombie = zombieRefs.current[zombieId];
-      if (zombie && zombie.mesh && zombie.mesh.userData) {
-        if (isPet) {
-          console.log(`Питомец атакует зомби ${zombieId}`);
-          zombie.mesh.userData.isPetAttack = true;
-        }
-      }
-      damageZombie(zombieId);
-    };
-    
-    // Добавляем функцию для сброса волны зомби
-    scene.userData.resetZombieWave = () => {
-      console.log('Сброс волны зомби');
-      
-      // Сбрасываем счетчик волн
-      wave.current = 1;
-      
-      // Сбрасываем скорость зомби
-      baseZombieSpeed.current = 3;
-      
-      // Сбрасываем время последнего спавна
-      lastSpawnTime.current = 0;
-    };
-    
-    return () => {
-      // Очистка при размонтировании
-      delete scene.userData.damageZombie;
-      delete scene.userData.resetZombieWave;
-      
-      // Удаляем всех зомби из сцены
-      Object.values(zombieRefs.current).forEach(zombie => {
-        scene.remove(zombie.mesh);
-      });
-      
-      // Удаляем все предупреждения о зомби
-      Object.values(zombieWarnings.current).forEach(warning => {
-        scene.remove(warning.mesh);
-      });
-    };
-  }, [scene]);
+      // Обновляем состояние зомби в родительском компоненте (отложенно)
+      // Accumulate health update
+      zombiesToUpdateRef.current.push({ id, health: zombie.health });
+      setNeedsUpdate(true); // Signal that an update is needed
+    }
+  };
 
   // Effect to apply batched updates to the parent state
   useEffect(() => {
@@ -842,6 +1601,49 @@ const Zombies: React.FC<ZombiesProps> = ({
     setNeedsUpdate(false);
 
   }, [needsUpdate, zombies, setZombies]);
+
+  // Экспортируем функцию для обработки попадания пули в зомби
+  useEffect(() => {
+    // Добавляем метод к userData компонента
+    scene.userData.damageZombie = (zombieId: string, isPet: boolean = false) => {
+      // Если атака от питомца, устанавливаем флаг
+      const zombie = zombieRefs.current[zombieId];
+      if (zombie && zombie.mesh && zombie.mesh.userData) {
+        if (isPet) {
+          console.log(`Питомец атакует зомби ${zombieId}`);
+          zombie.mesh.userData.isPetAttack = true;
+        }
+      }
+      damageZombie(zombieId);
+    };
+    
+    // Добавляем функцию для сброса волны зомби
+    scene.userData.resetZombieWave = () => {
+      console.log('Сброс волны зомби');
+      
+      // Сбрасываем счетчик волн
+      wave.current = 1;
+      
+      // Сбрасываем скорость зомби
+      baseZombieSpeed.current = 3;
+      
+      // Сбрасываем время последнего спавна
+      lastSpawnTime.current = 0;
+      
+      // Сбрасываем параметры волн
+      gameStartTime.current = Date.now();
+      lastWaveTime.current = Date.now();
+      nextWaveInterval.current = 60000; // 1 минута до первой волны
+      spawnBurst.current = 0;
+      spawnBurstRemaining.current = 0;
+    };
+    
+    return () => {
+      // Очистка при размонтировании
+      delete scene.userData.damageZombie;
+      delete scene.userData.resetZombieWave;
+    };
+  }, [scene]);
   
   return null; // Визуальное представление обрабатывается через Three.js напрямую
 };
