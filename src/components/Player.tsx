@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Vector3, Raycaster, Vector2, Mesh, BoxGeometry, MeshStandardMaterial, Group } from 'three';
+import { Vector3, Raycaster, Mesh, Group } from 'three';
 import * as THREE from 'three';
 import Bullet from '../components/Bullet';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,8 +17,6 @@ interface PlayerProps {
   onZombieHurt?: () => void;
   onUpdateDirection?: (direction: Vector3) => void;
   setPlayerPosition?: (pos: Vector3) => void;
-  zombiePositions?: { id: string; position: Vector3; isDying: boolean }[];
-  petPosition?: Vector3;
   onShot?: (position: Vector3, direction: Vector3) => void;
 }
 
@@ -49,14 +47,11 @@ const Player: React.FC<PlayerProps> = ({
   onZombieHurt,
   onUpdateDirection,
   setPlayerPosition,
-  zombiePositions,
-  petPosition,
   onShot
 }) => {
   const { camera, scene } = useThree();
   const playerRef = useRef<any>(null);
   const raycaster = useRef(new Raycaster());
-  const mouse = useRef(new Vector2(0, 0)); // Центр экрана для raycaster
   const [bullets, setBullets] = useState<Array<BulletType>>([]);
   const [muzzleFlashes, setMuzzleFlashes] = useState<Array<MuzzleFlashType>>([]);
   const gunRef = useRef<Group>(null);

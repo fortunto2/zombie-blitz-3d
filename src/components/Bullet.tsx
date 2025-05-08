@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Vector3, Mesh, CylinderGeometry } from 'three';
+import { Vector3, Mesh } from 'three';
 import { useFrame } from '@react-three/fiber';
 
 interface BulletProps {

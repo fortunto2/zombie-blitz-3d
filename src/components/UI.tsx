@@ -15,9 +15,6 @@ interface UIProps {
   zombiesKilled?: number;
   zombieCount?: number;
   kills?: number;
-  time?: number;
-  difficulty?: string;
-  gameState?: string;
 }
 
 const UI: React.FC<UIProps> = ({ 
@@ -33,10 +30,7 @@ const UI: React.FC<UIProps> = ({
   petDirection,
   zombiesKilled = 0,
   zombieCount = 0,
-  kills = 0,
-  time,
-  difficulty,
-  gameState
+  kills = 0
 }) => {
   // Вычисляем количество активных зомби
   const activeZombiesCount = zombieCount || (zombiePositions ? zombiePositions.filter(z => !z.isDying).length : 0);

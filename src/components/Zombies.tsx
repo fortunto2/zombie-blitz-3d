@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Vector3, Mesh, MeshPhongMaterial, SphereGeometry, BoxGeometry, Group, Box3, PlaneGeometry, MeshBasicMaterial } from 'three';
+import { Vector3, Mesh, MeshPhongMaterial, SphereGeometry, BoxGeometry, Group, PlaneGeometry, MeshBasicMaterial } from 'three';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -39,21 +39,6 @@ interface ZombieWarning {
   startTime: number;
   mesh: Group;
 }
-
-// Определяем препятствия (те же, что в Arena.tsx)
-const obstacles = [
-  { position: [5, 1, 5], size: [2, 2, 2] },
-  { position: [-5, 1, 5], size: [2, 2, 2] },
-  { position: [5, 1, -5], size: [2, 2, 2] },
-  { position: [-5, 1, -5], size: [2, 2, 2] },
-  { position: [0, 1, 8], size: [4, 2, 1] },
-  { position: [0, 1, -8], size: [4, 2, 1] },
-  { position: [8, 1, 0], size: [1, 2, 4] },
-  { position: [-8, 1, 0], size: [1, 2, 4] },
-].map(({ position, size }) => ({
-  position: new Vector3(...position as [number, number, number]),
-  size: new Vector3(...size as [number, number, number])
-}));
 
 // Функция для получения случайной позиции у стены арены с указанием стороны
 function getRandomWallPosition(arenaSize: number, forcedSide?: number): Vector3 {
@@ -119,13 +104,6 @@ const Zombies: React.FC<ZombiesProps> = ({
   const zombiesToRemoveRef = useRef<string[]>([]);
   const zombiesToUpdateRef = useRef<Partial<ZombieData>[]>([]); // Store updates like health
   const [needsUpdate, setNeedsUpdate] = useState(false);
-  
-  // Добавляем состояние для отслеживания начального всплеска зомби
-  const initialZombieWave = useRef<{ active: boolean; count: number; startTime: number }>({
-    active: false, // Изменяем на false, чтобы отключить начальную волну
-    count: 0,
-    startTime: Date.now()
-  });
   
   // Создание полоски здоровья для зомби
   const createHealthBar = () => {
@@ -641,7 +619,7 @@ const Zombies: React.FC<ZombiesProps> = ({
   };
   
   // Обработка падения умирающих зомби
-  const processDeadZombie = (zombie: Zombie, delta: number) => {
+  const processDeadZombie = (zombie: Zombie) => {
     const now = Date.now();
     const dyingDuration = 1000; // Уменьшаем длительность анимации падения до 1 секунды (было 1.5)
     const elapsedTime = now - zombie.dyingStartTime;
@@ -713,7 +691,7 @@ const Zombies: React.FC<ZombiesProps> = ({
       
       // Обрабатываем умирающих зомби отдельно
       if (zombie.isDying) {
-        const shouldRemove = processDeadZombie(zombie, delta);
+        const shouldRemove = processDeadZombie(zombie);
         if (shouldRemove) {
           removeZombie(id);
         }

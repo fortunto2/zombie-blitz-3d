@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Vector3, Group, Mesh, Box3 } from 'three';
+import { Vector3, Group, Mesh } from 'three';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -148,9 +148,9 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
     petPosition.current.copy(petRef.current.position);
     
     // Вспомогательные анимации
-    animateTail(delta);
-    animateHead(delta);
-    animateJaw(delta);
+    animateTail();
+    animateHead();
+    animateJaw();
     
     const now = Date.now();
     
@@ -413,9 +413,6 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
       const camera = scene.getObjectByProperty('isCamera', true) as THREE.Camera;
       
       if (camera && camera.quaternion) {
-        // Определяем позицию за игроком
-        const playerDirection = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-        
         // Позиция немного позади и сбоку от игрока
         const offsetX = (Math.random() - 0.5) * 2; // Случайное смещение по X
         const petOffset = new Vector3(offsetX, 0, 2).applyQuaternion(camera.quaternion);
@@ -424,7 +421,6 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
         targetPosition.current.copy(playerPosition).add(petOffset);
       } else {
         // Если камера недоступна, просто идем к игроку
-        const directionToPlayer = new Vector3().subVectors(playerPosition, petRef.current!.position).normalize();
         const randomOffset = new Vector3(
           (Math.random() - 0.5) * 2,
           0,
@@ -441,7 +437,7 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
   };
   
   // Анимация хвоста
-  const animateTail = (delta: number) => {
+  const animateTail = () => {
     if (tailRef.current) {
       // Базовое махание хвостом
       const tailWag = Math.sin(Date.now() / 200) * 0.5;
@@ -459,7 +455,7 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
   };
   
   // Анимация головы
-  const animateHead = (delta: number) => {
+  const animateHead = () => {
     if (headRef.current) {
       // Базовое движение головой
       const headMovement = Math.sin(Date.now() / 500) * 0.1;
@@ -482,7 +478,7 @@ const Pet: React.FC<PetProps> = ({ playerPosition, isEnabled, isGameOver, onPlay
   };
   
   // Анимация челюсти (для укуса)
-  const animateJaw = (delta: number) => {
+  const animateJaw = () => {
     if (jawRef.current) {
       if (isAttacking) {
         // Анимация укуса: челюсть открывается и закрывается быстро

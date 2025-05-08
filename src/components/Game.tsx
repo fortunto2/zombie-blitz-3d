@@ -134,7 +134,7 @@ const Game: React.FC<GameProps> = ({
   };
 
   // Приостанавливаем игровую логику при паузе
-  useFrame((_, delta) => {
+  useFrame(() => {
     if (isPaused) {
       return; // Останавливаем все обновления при паузе
     }
@@ -187,9 +187,7 @@ const Game: React.FC<GameProps> = ({
         onZombieHurt={onZombieHurt}
         onUpdateDirection={setLocalPlayerDirection}
         setPlayerPosition={setPlayerPosition} 
-        zombiePositions={zombiePositionsRef.current}
-        petPosition={petPositionRef.current || undefined}
-        onShot={(position, direction) => {}}
+        onShot={() => {}}
       />
       
       <Zombies 
