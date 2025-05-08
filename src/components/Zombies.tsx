@@ -1543,7 +1543,7 @@ const Zombies: React.FC<ZombiesProps> = ({
   };
   
   // Нанесение урона зомби
-  const damageZombie = (id: string, isPet: boolean = false, isHeadshot: boolean = false) => {
+  const damageZombie = (id: string, _isPet: boolean = false, isHeadshot: boolean = false) => {
     const zombie = zombieRefs.current[id];
     if (zombie && !zombie.isDying) {
       // Запоминаем предыдущее здоровье для проверки перехода порогов
@@ -1751,9 +1751,12 @@ const Zombies: React.FC<ZombiesProps> = ({
         
         // Применяем материал и масштаб
         if (particle.material instanceof THREE.MeshPhongMaterial) {
-          particle.material = particle.material.clone();
+          const phongMat = particle.material as THREE.MeshPhongMaterial;
+          particle.material = phongMat.clone();
           // Слегка затемняем материал
-          particle.material.color.multiplyScalar(0.8);
+          phongMat.color.multiplyScalar(0.8);
+        } else {
+          // Если материал не MeshPhongMaterial, не трогаем цвет
         }
         
         // Начальная позиция - позиция части зомби
@@ -1856,52 +1859,39 @@ const Zombies: React.FC<ZombiesProps> = ({
       if (Math.random() < CHAIN_REACTION_PROBABILITY) {
         // Получаем зомби
         const zombie = zombieRefs.current[id];
-        
         // Наносим урон от цепной реакции
         if (zombie && !zombie.isDying) {
           // Наносим урон от взрыва
           zombie.health -= CHAIN_REACTION_DAMAGE;
-          
           // Обновляем полоску здоровья
           if (zombie.healthBar) {
             updateHealthBar(zombie);
           }
-          
           // Если зомби умер от урона
           if (zombie.health <= 0) {
             zombie.isDying = true;
             zombie.dyingStartTime = Date.now();
-            
             // Останавливаем движение зомби
             zombie.velocity.set(0, 0, 0);
-            
             // Скрываем полоску здоровья
             if (zombie.healthBar) {
               zombie.healthBar.visible = false;
             }
-            
-            // Если это был хедшот или критический урон, создаем эффект взрыва
+            // --- Исправление: определяем isHeadshot и damage локально ---
+            const isHeadshot = false;
+            const damage = CHAIN_REACTION_DAMAGE;
             if (isHeadshot || damage >= 50) {
               createExplosion(zombie.mesh.position.clone(), zombie.mesh.children);
-              
               // Ищем соседних зомби для цепной реакции
               triggerChainReaction(zombie.mesh.position.clone(), id);
             } else {
               // Сохраняем текущее направление поворота зомби (только по оси Y)
-              // Это предотвратит вращение во время падения
               const currentYRotation = zombie.mesh.rotation.y;
-              
-              // Сбрасываем вращение по другим осям для правильного падения
               zombie.mesh.rotation.x = 0;
               zombie.mesh.rotation.z = 0;
-              
-              // Восстанавливаем вращение по оси Y, чтобы зомби падал в правильном направлении
               zombie.mesh.rotation.y = currentYRotation;
             }
-            
             console.log(`Зомби ${id} умирает, начинаем анимацию ${isHeadshot ? 'взрыва' : 'падения'}`);
-            
-            // Вызываем обработчик убийства зомби, если он задан
             if (onZombieKilled) {
               onZombieKilled(id);
             }
