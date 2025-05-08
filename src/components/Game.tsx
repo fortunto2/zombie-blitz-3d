@@ -24,6 +24,7 @@ interface GameProps {
   setPetPosition: (position: Vector3 | null, direction?: Vector3) => void;
   setPlayerPos: (position: Vector3) => void;
   setPlayerDirection?: (direction: Vector3) => void;
+  mobileMovement?: {x: number, y: number};
 }
 
 const Game: React.FC<GameProps> = ({ 
@@ -40,7 +41,8 @@ const Game: React.FC<GameProps> = ({
   setZombieData,
   setPetPosition,
   setPlayerPos,
-  setPlayerDirection
+  setPlayerDirection,
+  mobileMovement
 }) => {
   const controlsRef = useRef<any>(null);
   const [zombies, setZombies] = useState<any[]>([]);
@@ -172,6 +174,25 @@ const Game: React.FC<GameProps> = ({
 
   // Create empty no-op functions for temporarily disabling sounds
   const noop = () => {};
+
+  // Обработка движения с мобильного джойстика
+  useEffect(() => {
+    if (mobileMovement && !isGameOver && !isPaused) {
+      // Создаем вектор направления из ввода джойстика
+      const moveDir = new Vector3(mobileMovement.x, 0, -mobileMovement.y).normalize();
+      
+      // Применяем скорость движения
+      const moveSpeed = 0.1;
+      if (moveDir.length() > 0) {
+        setPlayerVelocity(moveDir.multiplyScalar(moveSpeed));
+        
+        // Также обновляем направление игрока, если он движется
+        if (moveDir.length() > 0.1) {
+          setLocalPlayerDirection(moveDir.clone());
+        }
+      }
+    }
+  }, [mobileMovement, isGameOver, isPaused]);
 
   return (
     <>

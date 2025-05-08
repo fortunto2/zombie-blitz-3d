@@ -7,6 +7,7 @@ import UI from './components/UI';
 import Menu from './components/Menu';
 import PauseMenu from './components/PauseMenu';
 import SoundEffects, { SoundEffectsRef } from './components/SoundEffects';
+import MobileControls from './components/MobileControls';
 
 const App: React.FC = () => {
   const [isGameOver, setIsGameOver] = useState(false);
@@ -16,6 +17,10 @@ const App: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [isPetEnabled, setIsPetEnabled] = useState(true);
   const soundEffectsRef = useRef<SoundEffectsRef>(null);
+  // Состояние для движения с мобильного джойстика
+  const [mobileMovement, setMobileMovement] = useState<{x: number, y: number}>({x: 0, y: 0});
+  // Обнаружение мобильного устройства
+  const [isMobile, setIsMobile] = useState<boolean>(false);
   
   // States for mini-map and counters
   const [playerPosition, setPlayerPosition] = useState<Vector3 | null>(null);
@@ -24,6 +29,26 @@ const App: React.FC = () => {
   const [petDirection, setPetDirection] = useState<Vector3 | null>(null);
   const [zombiePositions, setZombiePositions] = useState<{ id: string; position: Vector3; isDying: boolean; direction?: Vector3 }[]>([]);
   const [zombiesKilled, setZombiesKilled] = useState(0);
+  
+  // Определяем, является ли устройство мобильным
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+      return /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+    };
+    
+    setIsMobile(checkMobile());
+  }, []);
+  
+  // Callback для обработки мобильного движения
+  const handleMobileMove = (x: number, y: number) => {
+    setMobileMovement({x, y});
+  };
+  
+  // Callback для обработки мобильного выстрела
+  const handleMobileShoot = () => {
+    handleShoot();
+  };
   
   // Callback for updating zombie data
   const handleZombieDataUpdate = (data: { positions: any[]; killed: number }) => {
@@ -164,6 +189,7 @@ const App: React.FC = () => {
             setPetPosition={handlePetUpdate}
             setPlayerPos={setPlayerPosition}
             setPlayerDirection={handlePlayerDirectionUpdate}
+            mobileMovement={mobileMovement}
           />
         </Suspense>
         {/* Container for statistics panels */}
@@ -213,6 +239,15 @@ const App: React.FC = () => {
             <PauseMenu
               onResume={handleResumePause}
               onQuit={handleQuitToMenu}
+            />
+          )}
+          
+          {/* Мобильные элементы управления */}
+          {!showMenu && !isGameOver && !isPaused && (
+            <MobileControls 
+              isEnabled={isMobile} 
+              onMove={handleMobileMove}
+              onShoot={handleMobileShoot}
             />
           )}
         </>

@@ -442,4 +442,77 @@ body {
 .ms-stats canvas,
 .mb-stats canvas {
   height: 40px !important;
+}
+
+/* Стили для мобильных элементов управления */
+.mobile-controls {
+  display: none; /* По умолчанию скрыты на десктопе */
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1002;
+  touch-action: none;
+  height: 200px;
+}
+
+.joystick-zone {
+  position: absolute;
+  left: 30px;
+  bottom: 30px;
+  width: 120px;
+  height: 120px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 50%;
+}
+
+.shoot-button {
+  position: absolute;
+  right: 30px;
+  bottom: 30px;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: crimson;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+.shoot-button span {
+  color: white;
+  font-weight: bold;
+  font-size: 16px;
+  pointer-events: none;
+}
+
+/* Адаптивность для мобильных устройств */
+@media (max-width: 768px) {
+  .mobile-controls {
+    display: block;
+  }
+  
+  /* Настраиваем положение мини-карты для мобильных */
+  .mini-map {
+    right: 20px;
+    bottom: 150px;
+    width: 100px;
+    height: 100px;
+  }
+  
+  /* Настраиваем размер индикаторов направления */
+  .mini-map:after {
+    width: 100px;
+    height: 100px;
+    background-image: radial-gradient(circle, transparent 48px, rgba(255, 255, 255, 0.2) 50px);
+  }
+  
+  /* Настраиваем стиль для статистики на мобильных */
+  .fps-stats,
+  .ms-stats,
+  .mb-stats {
+    display: none; /* Скрываем статистику на мобильных */
+  }
 } 
