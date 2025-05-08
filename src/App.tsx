@@ -174,11 +174,11 @@ const App: React.FC = () => {
         <Stats showPanel={2} className="mb-stats" />  {/* MB */}
       </div>
       
-      {/* Временно скрываем звуковые эффекты */}
-      {/* <SoundEffects 
+      {/* Включаем звуковые эффекты, но только для выстрелов */}
+      <SoundEffects 
         ref={soundEffectsRef}
         isEnabled={!showMenu && !isPaused && !isGameOver}
-      /> */}
+      />
       
       {showMenu ? (
         <Menu 

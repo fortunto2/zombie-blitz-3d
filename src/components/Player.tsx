@@ -213,6 +213,10 @@ const Player: React.FC<PlayerProps> = ({
       if (intersect.distance < 1.5) { // Увеличенная зона попадания
         // Проверяем, попали ли в зомби
         const parent = intersect.object.parent;
+        
+        // Проверяем, является ли объект головой зомби
+        const isHeadshot = intersect.object.userData && intersect.object.userData.isHead === true;
+        
         if (parent && parent.userData && parent.userData.isZombie) {
           // Вызываем функцию для воспроизведения звука ранения зомби
           if (onZombieHurt) {
@@ -222,10 +226,10 @@ const Player: React.FC<PlayerProps> = ({
           
           // Вызываем функцию нанесения урона зомби из компонента Zombies
           if (scene.userData.damageZombie) {
-            scene.userData.damageZombie(parent.userData.id);
+            scene.userData.damageZombie(parent.userData.id, false, isHeadshot);
           }
           
-          console.log(`Пуля ${bullet.id.substring(0, 8)} попала в зомби!`);
+          console.log(`Пуля ${bullet.id.substring(0, 8)} попала в зомби! ${isHeadshot ? 'ХЕДШОТ!' : ''}`);
           
           // Помечаем пулю как попавшую в цель
           return { ...bullet, hasHit: true };

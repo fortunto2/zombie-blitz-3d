@@ -186,8 +186,8 @@ const Game: React.FC<GameProps> = ({
         isLocked={isLocked}
         isGameOver={isGameOver || isPaused}
         onZombieHit={handleZombieHit}
-        onShoot={noop} // Отключаем звуки выстрелов
-        onZombieHurt={noop} // Отключаем звуки ранения зомби
+        onShoot={onShoot}
+        onZombieHurt={noop}
         onUpdateDirection={setLocalPlayerDirection}
         setPlayerPosition={setPlayerPosition} 
         onShot={() => {}}
