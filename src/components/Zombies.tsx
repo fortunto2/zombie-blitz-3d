@@ -56,6 +56,8 @@ class ObjectPool<T> {
   private createFn: () => T;
   private resetFn: (item: T) => void;
   private maxSize: number;
+  private _created: number = 0; // Счетчик созданных объектов
+  private _reused: number = 0; // Счетчик повторно использованных объектов
 
   constructor(createFn: () => T, resetFn: (item: T) => void, initialSize: number = 0, maxSize: number = 100) {
     this.createFn = createFn;
@@ -65,14 +67,21 @@ class ObjectPool<T> {
     // Предварительное создание объектов
     for (let i = 0; i < initialSize; i++) {
       this.pool.push(this.createFn());
+      this._created++;
     }
+    
+    console.log(`Пул инициализирован: создано ${initialSize} объектов`);
   }
 
   // Получение объекта из пула или создание нового
   get(): T {
     if (this.pool.length > 0) {
-      return this.pool.pop()!;
+      const obj = this.pool.pop()!;
+      this._reused++;
+      return obj;
     }
+    
+    this._created++;
     return this.createFn();
   }
 
@@ -88,11 +97,22 @@ class ObjectPool<T> {
   // Очистка всего пула
   clear(): void {
     this.pool = [];
+    this._created = 0;
+    this._reused = 0;
   }
 
   // Получение текущего размера пула
   size(): number {
     return this.pool.length;
+  }
+  
+  // Получение статистики пула
+  getStats(): { created: number; reused: number; poolSize: number } {
+    return {
+      created: this._created,
+      reused: this._reused,
+      poolSize: this.pool.length
+    };
   }
 }
 
@@ -323,7 +343,7 @@ const Zombies: React.FC<ZombiesProps> = ({
   const warningPoolRef = useRef<ObjectPool<Group> | null>(null);
   
   // Только для экстренных случаев - принудительное ограничение
-  const HARD_MAX_ZOMBIES_LIMIT = 30; // Жесткое ограничение количества зомби независимо от других факторов
+  const HARD_MAX_ZOMBIES_LIMIT = 300; // Увеличено с 30 до 300 для стресс-тестирования
   
   // Refs to accumulate changes for batch update
   const zombiesToAddRef = useRef<ZombieData[]>([]);
@@ -351,13 +371,13 @@ const Zombies: React.FC<ZombiesProps> = ({
   
   // Константы для оптимизации
   const SEPARATION_UPDATE_FREQUENCY = 10; // Обновлять разделение каждые N кадров
-  const ZOMBIE_UPDATE_BATCH_SIZE = 15; // Еще уменьшаем количество обрабатываемых зомби за кадр 
+  const ZOMBIE_UPDATE_BATCH_SIZE = 25; // Увеличено с 15 до 25 для обработки большего количества зомби за кадр
   const PERFORMANCE_MONITOR_INTERVAL = 20; // Интервал мониторинга производительности (кадры)
   
   // Для контроля производительности
   const fpsHistory = useRef<number[]>([]);
   const lastFrameTime = useRef<number>(0);
-  const dynamicSpawnInterval = useRef<number>(2000); // Начальное значение спавна (2 секунды)
+  const dynamicSpawnInterval = useRef<number>(500); // Начальное значение спавна уменьшено с 2000 до 500 мс
   const averageFps = useRef<number>(60); // Средний FPS для динамической адаптации
   const lowPerformanceMode = useRef<boolean>(false); // Режим низкой производительности
   const criticalPerformanceMode = useRef<boolean>(false); // Режим критически низкой производительности
@@ -431,18 +451,19 @@ const Zombies: React.FC<ZombiesProps> = ({
     };
     
     // Создаем пулы с начальными объектами
+    // Увеличиваем начальный размер и максимальный размер пула для лучшей производительности
     zombiePoolRef.current = new ObjectPool<Group>(
       createZombieGroup,
       resetZombieGroup,
-      5, // Начальный размер пула 
-      30 // Максимальный размер пула
+      20, // Увеличено с 5 до 20
+      100 // Увеличено с 30 до 100
     );
     
     warningPoolRef.current = new ObjectPool<Group>(
       createWarningGroup,
       resetWarningGroup,
-      5, // Начальный размер пула
-      20 // Максимальный размер пула
+      10, // Увеличено с 5 до 10
+      50  // Увеличено с 20 до 50
     );
     
     // Для мобильных устройств или низкой производительности сразу активируем режим низкой графики
@@ -471,7 +492,12 @@ const Zombies: React.FC<ZombiesProps> = ({
     
     // Устанавливаем проверку на утечки памяти 
     const intervalId = setInterval(() => {
-      console.log(`Zомби статистика: создано=${totalZombiesCreated}, удалено=${totalZombiesRemoved}, в пуле=${zombiePoolRef.current?.size() || 0}, активных=${Object.keys(zombieRefs.current).length}`);
+      const zombiePoolStats = zombiePoolRef.current?.getStats() || { created: 0, reused: 0, poolSize: 0 };
+      const warningPoolStats = warningPoolRef.current?.getStats() || { created: 0, reused: 0, poolSize: 0 };
+      
+      console.log(`Zомби статистика: создано=${totalZombiesCreated}, удалено=${totalZombiesRemoved}, активных=${Object.keys(zombieRefs.current).length}`);
+      console.log(`Пул зомби: создано=${zombiePoolStats.created}, переиспользовано=${zombiePoolStats.reused}, размер пула=${zombiePoolStats.poolSize}`);
+      console.log(`Пул предупреждений: создано=${warningPoolStats.created}, переиспользовано=${warningPoolStats.reused}, размер пула=${warningPoolStats.poolSize}`);
     }, 10000);
     
     return () => {
@@ -842,7 +868,7 @@ const Zombies: React.FC<ZombiesProps> = ({
   
   // Спавн зомби
   const spawnZombie = () => {
-    const now = Date.now();
+      const now = Date.now();
     
     // Получаем текущее число активных зомби (не умирающих)
     const activeZombieCount = Object.values(zombieRefs.current)
@@ -859,15 +885,15 @@ const Zombies: React.FC<ZombiesProps> = ({
       // Запоминаем время начала новой волны
       lastWaveTime.current = now;
       
-      // Вычисляем размер волны (количество зомби) по Фибоначчи
-      spawnBurst.current = fibonacci(wave.current + 2); // +2 для начала с разумного числа
+      // Вычисляем размер волны (количество зомби) по Фибоначчи и увеличиваем в 10 раз
+      spawnBurst.current = fibonacci(wave.current + 5) * 10; // Увеличено в 10 раз!
       spawnBurstRemaining.current = spawnBurst.current;
       
       // Увеличиваем базовую скорость зомби
       baseZombieSpeed.current = Math.min(8, baseZombieSpeed.current + 0.2);
       
-      // Уменьшаем интервал между волнами с каждой волной (но не менее 30 секунд)
-      nextWaveInterval.current = Math.max(30000, 60000 - wave.current * 2000);
+      // Уменьшаем интервал между волнами в 2 раза
+      nextWaveInterval.current = Math.max(15000, 30000 - wave.current * 2000); // Уменьшено до 15 секунд минимум вместо 30
       
       console.log(`===== НОВАЯ ВОЛНА ${wave.current} =====`);
       console.log(`Количество зомби: ${spawnBurst.current}`);
@@ -893,7 +919,8 @@ const Zombies: React.FC<ZombiesProps> = ({
         lastSpawnTime.current = now;
         
         // Адаптируем интервал спавна к размеру волны: чем больше волна, тем чаще спавн
-        burstSpawnInterval.current = Math.max(200, 2000 - wave.current * 100);
+        // Уменьшаем интервал в 5 раз
+        burstSpawnInterval.current = Math.max(50, 400 - wave.current * 20); // Было Math.max(200, 2000 - wave.current * 100)
         
         return; // Выходим после создания зомби из волны
       }
@@ -907,9 +934,9 @@ const Zombies: React.FC<ZombiesProps> = ({
     
     // Стандартный спавн зомби между волнами (редкий)
     // Адаптируем интервал спавна в зависимости от количества зомби и текущей волны
-    // Чем больше волна и зомби, тем реже случайный спавн
+    // Уменьшаем интервал в 2 раза
     const spawnInterval = dynamicSpawnInterval.current * (1 + activeZombieCount / MAX_ZOMBIES) 
-      * (1 + Math.log(wave.current + 1) / Math.log(10));
+      * (1 + Math.log(wave.current + 1) / Math.log(10)) / 2; // Добавлено деление на 2
     
     if (now - lastSpawnTime.current > spawnInterval) {
       lastSpawnTime.current = now;
@@ -977,8 +1004,10 @@ const Zombies: React.FC<ZombiesProps> = ({
       separationForces.current[zombie.id] = new Vector3();
       neighborCounts.current[zombie.id] = 0;
       
-      // Определяем радиус разделения
-      const separationRadius = 2;
+      // Определяем радиус разделения в зависимости от количества зомби
+      // Чем больше зомби, тем меньше радиус, чтобы они могли плотнее группироваться
+      const zombieCount = Object.keys(zombieRefs.current).length;
+      const separationRadius = zombieCount > 100 ? 1.2 : zombieCount > 50 ? 1.5 : 2;
       
       // Получаем позицию зомби
       const zombiePosition = zombie.mesh.position;
@@ -986,8 +1015,16 @@ const Zombies: React.FC<ZombiesProps> = ({
       // Быстро находим потенциальных соседей через пространственную сетку
       const nearbyZombieIds = spatialGrid.current.findNearby(zombiePosition, separationRadius);
       
+      // Ограничиваем количество обрабатываемых соседей для повышения производительности
+      // при наличии большого количества зомби
+      const limitedNeighbors = zombieCount > 150 ? 
+                              nearbyZombieIds.slice(0, 5) : 
+                              zombieCount > 80 ? 
+                              nearbyZombieIds.slice(0, 8) : 
+                              nearbyZombieIds;
+      
       // Обрабатываем только ближайших соседей
-      nearbyZombieIds.forEach((otherId) => {
+      limitedNeighbors.forEach((otherId) => {
         if (otherId === zombie.id) return; // Пропускаем самого себя
         
         const otherZombie = zombieRefs.current[otherId];
@@ -1087,7 +1124,8 @@ const Zombies: React.FC<ZombiesProps> = ({
         const wasLow = lowPerformanceMode.current;
         const wasUltraLow = ultraLowGraphicsMode.current;
         
-        if (avgFps < 15) {
+        // Для стресс-теста снижаем порог критического FPS с 15 до 10 и с 20 до 12
+        if (avgFps < 10) { // Было < 15
           // Включаем режим ультра-низкой графики при критически низком FPS
           ultraLowGraphicsMode.current = true;
           criticalPerformanceMode.current = true;
@@ -1097,13 +1135,13 @@ const Zombies: React.FC<ZombiesProps> = ({
           // При экстремально низкой производительности удаляем большую часть зомби
           if (!wasUltraLow) {
             const zombiesCount = Object.keys(zombieRefs.current).length;
-            if (zombiesCount > 8) {
+            if (zombiesCount > 40) { // Увеличено с 8 до 40
               // Удаляем половину зомби для экстренного повышения производительности
-              const toRemove = Math.floor(zombiesCount * 0.5);
+              const toRemove = Math.floor(zombiesCount * 0.3); // Уменьшено с 0.5 до 0.3
               removeDistantZombies(toRemove);
             }
           }
-        } else if (avgFps < 20) {
+        } else if (avgFps < 12) { // Было < 20
           ultraLowGraphicsMode.current = false;
           criticalPerformanceMode.current = true;
           lowPerformanceMode.current = true;
@@ -1112,37 +1150,37 @@ const Zombies: React.FC<ZombiesProps> = ({
           // Если большое падение производительности, удаляем часть зомби
           if (!wasCritical) {
             const zombiesCount = Object.keys(zombieRefs.current).length;
-            if (zombiesCount > 8) {
+            if (zombiesCount > 40) { // Увеличено с 8 до 40
               // Удаляем самых дальних зомби
-              const toRemove = Math.floor(zombiesCount * 0.3); // Удаляем 30% зомби
+              const toRemove = Math.floor(zombiesCount * 0.2); // Уменьшено с 0.3 до 0.2
               removeDistantZombies(toRemove);
             }
           }
-        } else if (avgFps < 30) {
+        } else if (avgFps < 20) { // Было < 30
           ultraLowGraphicsMode.current = false;
           criticalPerformanceMode.current = false;
           lowPerformanceMode.current = true;
           if (!wasLow) {
             console.log(`Низкий FPS (${avgFps.toFixed(0)}), активируем режим низкой производительности`);
           }
-        } else if (avgFps > 45) {
+        } else if (avgFps > 35) { // Было > 45
           ultraLowGraphicsMode.current = false;
           criticalPerformanceMode.current = false;
           lowPerformanceMode.current = false;
         }
         
         // Адаптируем интервал спавна в зависимости от FPS
-        if (avgFps < 30) {
+        if (avgFps < 20) { // Было < 30
           // Производительность низкая, увеличиваем интервал спавна
-          dynamicSpawnInterval.current = Math.min(5000, dynamicSpawnInterval.current * 1.3);
+          dynamicSpawnInterval.current = Math.min(2000, dynamicSpawnInterval.current * 1.2); // Уменьшено с 5000 до 2000, множитель с 1.3 до 1.2
           
           // Также увеличиваем интервал между волнами
-          if (nextWaveInterval.current < 90000) {
-            nextWaveInterval.current = Math.min(90000, nextWaveInterval.current * 1.2);
+          if (nextWaveInterval.current < 45000) { // Уменьшено с 90000 до 45000
+            nextWaveInterval.current = Math.min(45000, nextWaveInterval.current * 1.1); // Множитель уменьшен с 1.2 до 1.1
           }
-        } else if (avgFps > 50 && dynamicSpawnInterval.current > 1000) {
+        } else if (avgFps > 30 && dynamicSpawnInterval.current > 250) { // Было > 50 и > 1000
           // Производительность хорошая, можем уменьшить интервал спавна
-          dynamicSpawnInterval.current = Math.max(1000, dynamicSpawnInterval.current * 0.9);
+          dynamicSpawnInterval.current = Math.max(250, dynamicSpawnInterval.current * 0.9); // Уменьшено с 1000 до 250
         }
       }
     }
@@ -1172,14 +1210,21 @@ const Zombies: React.FC<ZombiesProps> = ({
       updateZombieWarnings(delta);
     }
     
-    // Частота обновления сил разделения зависит от режима производительности
-    const separationFrequency = ultraLowGraphicsMode.current ? 
-      SEPARATION_UPDATE_FREQUENCY * 6 :
+    // Частота обновления сил разделения зависит от режима производительности и количества зомби
+    // Чем больше зомби, тем реже вычисляем силы отталкивания
+    const zombieCount = Object.keys(zombieRefs.current).length;
+    const separationFrequency = 
+      ultraLowGraphicsMode.current ? 
+        SEPARATION_UPDATE_FREQUENCY * 6 :
       criticalPerformanceMode.current ? 
         SEPARATION_UPDATE_FREQUENCY * 4 : 
-        lowPerformanceMode.current ? 
-          SEPARATION_UPDATE_FREQUENCY * 2 : 
-          SEPARATION_UPDATE_FREQUENCY;
+      lowPerformanceMode.current ? 
+        SEPARATION_UPDATE_FREQUENCY * 2 : 
+      zombieCount > 200 ?
+        SEPARATION_UPDATE_FREQUENCY * 3 :
+      zombieCount > 100 ?
+        SEPARATION_UPDATE_FREQUENCY * 2 :
+      SEPARATION_UPDATE_FREQUENCY;
     
     // Пересчитываем силы отталкивания только раз в separationFrequency кадров
     if (frameCount.current % separationFrequency === 0) {
@@ -1219,15 +1264,24 @@ const Zombies: React.FC<ZombiesProps> = ({
     const zombieIds = Object.keys(zombieRefs.current);
     
     // Ограничиваем количество обрабатываемых зомби за один кадр
-    const batchSize = ultraLowGraphicsMode.current ?
-      Math.max(3, Math.floor(ZOMBIE_UPDATE_BATCH_SIZE / 5)) :
+    // Адаптивно увеличиваем размер пакета для большего количества зомби
+    const batchSize = 
+      zombieCount > 150 ? 
+        Math.min(50, Math.floor(zombieCount / 6)) : // Для большого количества зомби увеличиваем пакет
+      ultraLowGraphicsMode.current ?
+        Math.max(3, Math.floor(ZOMBIE_UPDATE_BATCH_SIZE / 5)) :
       criticalPerformanceMode.current ? 
         Math.max(5, Math.floor(ZOMBIE_UPDATE_BATCH_SIZE / 4)) : 
-        lowPerformanceMode.current ? 
-          Math.floor(ZOMBIE_UPDATE_BATCH_SIZE / 2) : 
-          ZOMBIE_UPDATE_BATCH_SIZE;
+      lowPerformanceMode.current ? 
+        Math.floor(ZOMBIE_UPDATE_BATCH_SIZE / 2) : 
+      ZOMBIE_UPDATE_BATCH_SIZE;
     
-    const startIndex = (frameCount.current * batchSize) % Math.max(1, zombieIds.length);
+    // Оптимизация: статический индекс обработки для равномерного распределения зомби
+    // Вместо (frameCount.current * batchSize) % Math.max(1, zombieIds.length)
+    // Разделим зомби на равные группы и будем обрабатывать их последовательно
+    const numGroups = Math.ceil(zombieIds.length / batchSize);
+    const groupIndex = frameCount.current % numGroups;
+    const startIndex = groupIndex * batchSize;
     const endIndex = Math.min(startIndex + batchSize, zombieIds.length);
     
     // Обрабатываем только часть зомби за раз
@@ -1253,8 +1307,9 @@ const Zombies: React.FC<ZombiesProps> = ({
       // Вычисляем расстояние до игрока
       const distanceToPlayer = zombie.mesh.position.distanceTo(playerPosition);
       
-      // Оптимизация: более редкие обновления для дальних зомби
-      if (lowPerformanceMode.current) {
+      // Оптимизация: адаптивное пропускание обновлений для дальних зомби
+      // Чем больше зомби, тем чаще пропускаем обновления
+      if (lowPerformanceMode.current || zombieCount > 100) {
         if ((distanceToPlayer > 15 && frameCount.current % 4 !== 0) ||
             (distanceToPlayer > 10 && frameCount.current % 3 !== 0)) {
           continue; // Пропускаем обработку дальних зомби
@@ -1262,7 +1317,7 @@ const Zombies: React.FC<ZombiesProps> = ({
       }
       
       // В ультра-низком режиме пропускаем еще больше обновлений для дальних зомби
-      if (ultraLowGraphicsMode.current) {
+      if (ultraLowGraphicsMode.current || zombieCount > 150) {
         if ((distanceToPlayer > 20 && frameCount.current % 10 !== 0) ||
             (distanceToPlayer > 15 && frameCount.current % 6 !== 0) ||
             (distanceToPlayer > 10 && frameCount.current % 3 !== 0)) {
@@ -1298,9 +1353,9 @@ const Zombies: React.FC<ZombiesProps> = ({
       // Поворачиваем зомби к игроку, если он движется и находится близко
       // Пропускаем для дальних зомби в режиме низкой производительности
       if (zombie.velocity.length() > 0.001 && 
-          ((!lowPerformanceMode.current && distanceToPlayer < 20) || 
-          (lowPerformanceMode.current && distanceToPlayer < 15) ||
-          (criticalPerformanceMode.current && distanceToPlayer < 10))) {
+          ((distanceToPlayer < 20 && !lowPerformanceMode.current && !criticalPerformanceMode.current) || 
+           (distanceToPlayer < 15 && lowPerformanceMode.current) ||
+           (distanceToPlayer < 10 && criticalPerformanceMode.current))) {
         
         // Вычисляем направление к игроку в горизонтальной плоскости
         const lookDirection = new Vector3(
@@ -1327,11 +1382,10 @@ const Zombies: React.FC<ZombiesProps> = ({
         zombie.mesh.rotation.y += normalizedDiff * Math.min(1, delta * rotationSpeed);
       }
       
-      // Всегда поворачиваем полоску здоровья к камере, только для живых зомби
-      // В режиме низкой производительности обновляем полоски здоровья реже
+      // Всегда поворачиваем полоску здоровья к камере, только для живых зомби и близких зомби
       if (zombie.healthBar && 
-          ((!lowPerformanceMode.current && distanceToPlayer < 15 && frameCount.current % 2 === 0) || 
-           (!criticalPerformanceMode.current && distanceToPlayer < 10 && frameCount.current % 3 === 0) ||
+          ((distanceToPlayer < 15 && frameCount.current % 2 === 0 && !lowPerformanceMode.current) || 
+           (distanceToPlayer < 10 && frameCount.current % 3 === 0 && !criticalPerformanceMode.current) ||
            (distanceToPlayer < 5))) {
         
         zombie.healthBar.position.set(0, 2.8, 0);
@@ -1460,23 +1514,25 @@ const Zombies: React.FC<ZombiesProps> = ({
   // Динамический лимит зомби на основе волны и производительности
   const getMaxZombies = (): number => {
     // Получаем число зомби по Фибоначчи для текущей волны, но ограничиваем максимумом
-    const fibMaxZombies = fibonacci(wave.current + 3); // +3 вместо +4 для меньшего начального значения
+    // Увеличиваем в 10 раз
+    const fibMaxZombies = fibonacci(wave.current + 3) * 10; // Увеличено в 10 раз
     
     // Жестко ограничиваем максимальное количество зомби в зависимости от производительности
-    let maxAllowed = 25; // Стандартное значение снижено с 70 до 25
+    // Увеличиваем все значения примерно в 10 раз
+    let maxAllowed = 250; // Стандартное значение увеличено с 25 до 250
     
     if (ultraLowGraphicsMode.current) {
-      maxAllowed = 10; // Ультра низкое значение для слабых устройств
+      maxAllowed = 100; // Ультра низкое значение увеличено с 10 до 100
     } else if (criticalPerformanceMode.current) {
-      maxAllowed = 12; // Экстремальное ограничение при критически низкой производительности
+      maxAllowed = 120; // Экстремальное ограничение увеличено с 12 до 120
     } else if (lowPerformanceMode.current) {
-      maxAllowed = 18; // Строгое ограничение при низкой производительности
+      maxAllowed = 180; // Строгое ограничение увеличено с 18 до 180
     } else if (averageFps.current > 55) {
-      maxAllowed = 25; // Высокая производительность
+      maxAllowed = 250; // Высокая производительность увеличена с 25 до 250
     } else if (averageFps.current > 40) {
-      maxAllowed = 20; // Средняя производительность
+      maxAllowed = 200; // Средняя производительность увеличена с 20 до 200
     } else {
-      maxAllowed = 15; // Низкая производительность
+      maxAllowed = 150; // Низкая производительность увеличена с 15 до 150
     }
     
     // Возвращаем наименьшее из всех ограничений и жесткого лимита

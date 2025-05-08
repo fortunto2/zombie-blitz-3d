@@ -98,18 +98,18 @@ const Game: React.FC<GameProps> = ({
     setPlayerPos(playerPosition);
   }, [playerPosition, setPlayerPos]);
 
-  // Обновляем данные о зомби для UI
-  useEffect(() => {
-    setZombieData({
-      positions: zombiePositionsRef.current,
-      killed: zombiesKilled
-    });
-  }, [zombiePositionsRef.current, zombiesKilled, setZombieData]);
+  // Обновляем данные о зомби для UI - временно отключено для тестирования
+  // useEffect(() => {
+  //   setZombieData({
+  //     positions: zombiePositionsRef.current,
+  //     killed: zombiesKilled
+  //   });
+  // }, [zombiePositionsRef.current, zombiesKilled, setZombieData]);
 
-  // Синхронизируем данные о позиции питомца с UI
-  useEffect(() => {
-    setPetPosition(petPositionRef.current);
-  }, [petPositionRef.current, setPetPosition]);
+  // Временно отключаем синхронизацию позиции питомца
+  // useEffect(() => {
+  //   setPetPosition(petPositionRef.current);
+  // }, [petPositionRef.current, setPetPosition]);
 
   // Добавляем эффект для синхронизации направления с родительским компонентом
   useEffect(() => {
@@ -124,8 +124,8 @@ const Game: React.FC<GameProps> = ({
     setScore(prev => prev + 10);
     setZombiesKilled(prev => prev + 1);
     
-    // Воспроизводим звук смерти зомби
-    onZombieDeath();
+    // Временно отключаем звук смерти зомби
+    // onZombieDeath();
   };
 
   // Handle player damage
@@ -158,13 +158,16 @@ const Game: React.FC<GameProps> = ({
     }
   }, [isGameOver, gameScene]);
 
-  // Обновление позиции питомца
+  // Обновление позиции питомца - сохраняем функцию, но отключаем питомца в рендере
   const handlePetPositionUpdate = (position: Vector3 | null, direction?: Vector3) => {
     petPositionRef.current = position;
     if (direction) {
       petDirectionRef.current = direction;
     }
   };
+
+  // Создаем пустые функции-заглушки для временного отключения звуков
+  const noop = () => {};
 
   return (
     <>
@@ -183,8 +186,8 @@ const Game: React.FC<GameProps> = ({
         isLocked={isLocked}
         isGameOver={isGameOver || isPaused}
         onZombieHit={handleZombieHit}
-        onShoot={onShoot}
-        onZombieHurt={onZombieHurt}
+        onShoot={noop} // Отключаем звуки выстрелов
+        onZombieHurt={noop} // Отключаем звуки ранения зомби
         onUpdateDirection={setLocalPlayerDirection}
         setPlayerPosition={setPlayerPosition} 
         onShot={() => {}}
@@ -196,11 +199,12 @@ const Game: React.FC<GameProps> = ({
         setZombies={setZombies}
         isGameOver={isGameOver || isPaused}
         onPlayerDamage={handlePlayerDamage}
-        updatePositions={(positions) => { zombiePositionsRef.current = positions; }}
+        updatePositions={undefined} // Отключаем обновление позиций для мини-карты
         onZombieKilled={handleZombieHit}
       />
       
-      {isPetEnabled && (
+      {/* Временно отключаем питомца */}
+      {/* {isPetEnabled && (
         <Pet 
           playerPosition={playerPosition}
           isEnabled={isPetEnabled}
@@ -208,7 +212,7 @@ const Game: React.FC<GameProps> = ({
           onPlaySound={onPetSound}
           updatePosition={handlePetPositionUpdate}
         />
-      )}
+      )} */}
     </>
   );
 };

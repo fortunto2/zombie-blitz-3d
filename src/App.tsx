@@ -148,7 +148,7 @@ const App: React.FC = () => {
             onScoreChange={handleScoreChange} 
             onHealthChange={handleHealthChange}
             isPaused={isPaused}
-            isPetEnabled={isPetEnabled}
+            isPetEnabled={false}
             onPetSound={handlePetSound}
             onShoot={handleShoot}
             onZombieHurt={handleZombieHurt}
@@ -174,11 +174,11 @@ const App: React.FC = () => {
         <Stats showPanel={2} className="mb-stats" />  {/* MB */}
       </div>
       
-      {/* Звуковые эффекты перенесены сюда из компонента Game */}
-      <SoundEffects 
+      {/* Временно скрываем звуковые эффекты */}
+      {/* <SoundEffects 
         ref={soundEffectsRef}
         isEnabled={!showMenu && !isPaused && !isGameOver}
-      />
+      /> */}
       
       {showMenu ? (
         <Menu 
@@ -193,12 +193,12 @@ const App: React.FC = () => {
             health={health} 
             isGameOver={isGameOver} 
             onRestart={handleRestart} 
-            isPetEnabled={isPetEnabled}
-            playerPosition={playerPosition}
-            playerDirection={playerDirection}
-            zombiePositions={zombiePositions}
-            petPosition={petPosition}
-            petDirection={petDirection}
+            isPetEnabled={false}
+            playerPosition={null}
+            playerDirection={null}
+            zombiePositions={[]}
+            petPosition={null}
+            petDirection={null}
             zombiesKilled={zombiesKilled}
           />
           
