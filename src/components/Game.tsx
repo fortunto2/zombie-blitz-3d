@@ -19,6 +19,7 @@ interface GameProps {
   onShoot: () => void;
   onZombieHurt: () => void;
   onZombieDeath: () => void;
+  onPlayerHurt: () => void;
   setZombieData: (data: { positions: any[]; killed: number }) => void;
   setPetPosition: (position: Vector3 | null, direction?: Vector3) => void;
   setPlayerPos: (position: Vector3) => void;
@@ -35,6 +36,7 @@ const Game: React.FC<GameProps> = ({
   onShoot,
   onZombieHurt,
   onZombieDeath,
+  onPlayerHurt,
   setZombieData,
   setPetPosition,
   setPlayerPos,
@@ -53,15 +55,15 @@ const Game: React.FC<GameProps> = ({
   const zombiePositionsRef = useRef<{id: string; position: Vector3; isDying: boolean; direction?: Vector3}[]>([]);
   const petDirectionRef = useRef<Vector3 | null>(null);
   
-  // Получаем доступ к сцене из Three.js
+  // Get access to Three.js scene
   const { scene } = useThree();
   const [gameScene, setGameScene] = useState<THREE.Scene | null>(null);
   
-  // Инициализация сцены
+  // Scene initialization
   useEffect(() => {
     if (scene) {
       setGameScene(scene);
-      console.log('Сцена инициализирована');
+      console.log('Scene initialized');
     }
   }, [scene]);
   
@@ -93,72 +95,74 @@ const Game: React.FC<GameProps> = ({
     onHealthChange(health);
   }, [health, onHealthChange]);
 
-  // Синхронизируем позицию игрока с UI
+  // Sync player position with UI
   useEffect(() => {
     setPlayerPos(playerPosition);
   }, [playerPosition, setPlayerPos]);
 
-  // Обновляем данные о зомби для UI - временно отключено для тестирования
-  // useEffect(() => {
-  //   setZombieData({
-  //     positions: zombiePositionsRef.current,
-  //     killed: zombiesKilled
-  //   });
-  // }, [zombiePositionsRef.current, zombiesKilled, setZombieData]);
+  // Update zombie data for UI
+  useEffect(() => {
+    setZombieData({
+      positions: zombiePositionsRef.current,
+      killed: zombiesKilled
+    });
+  }, [zombiesKilled, setZombieData, zombiePositionsRef.current]);
 
-  // Временно отключаем синхронизацию позиции питомца
+  // Temporarily disable pet position sync
   // useEffect(() => {
   //   setPetPosition(petPositionRef.current);
   // }, [petPositionRef.current, setPetPosition]);
 
-  // Добавляем эффект для синхронизации направления с родительским компонентом
+  // Add effect for syncing direction with parent component
   useEffect(() => {
     if (setPlayerDirection) {
       setPlayerDirection(playerDirection);
     }
   }, [playerDirection, setPlayerDirection]);
 
-  // Handle zombie hit - теперь это происходит только когда зомби действительно удален
+  // Handle zombie hit - this happens only when the zombie is actually removed
   const handleZombieHit = (zombieId: string) => {
     setZombies(prev => prev.filter(z => z.id !== zombieId));
     setScore(prev => prev + 10);
     setZombiesKilled(prev => prev + 1);
     
-    // Временно отключаем звук смерти зомби
+    // Temporarily disable zombie death sound
     // onZombieDeath();
   };
 
   // Handle player damage
   const handlePlayerDamage = (damage: number) => {
     setHealth(prev => Math.max(0, prev - damage));
+    // Play player hurt sound when player takes damage
+    onPlayerHurt();
   };
 
-  // Приостанавливаем игровую логику при паузе
+  // Pause game logic during pause
   useFrame(() => {
     if (isPaused) {
-      return; // Останавливаем все обновления при паузе
+      return; // Stop all updates during pause
     }
-  }, 0); // Приоритет 0, чтобы этот хук вызывался первым
+  }, 0); // Priority 0 so this hook is called first
 
-  // Эффект для сброса игрового состояния при изменении isGameOver
+  // Effect to reset game state when isGameOver changes
   useEffect(() => {
     if (isGameOver === false && gameScene) {
-      // Игра только что была перезапущена
+      // Game has just been restarted
       setScore(0);
       setHealth(100);
       setZombiesKilled(0);
       
-      // Сбрасываем состояние волны зомби
+      // Reset zombie wave state
       if (typeof gameScene.userData.resetZombieWave === 'function') {
-        console.log('Вызываем сброс волны зомби при рестарте');
+        console.log('Calling zombie wave reset on restart');
         gameScene.userData.resetZombieWave();
       } else {
-        console.warn('Функция resetZombieWave не найдена в userData сцены');
+        console.warn('resetZombieWave function not found in scene userData');
       }
     }
   }, [isGameOver, gameScene]);
 
-  // Обновление позиции питомца - сохраняем функцию, но отключаем питомца в рендере
+  // Pet position update - keep function but disable pet in render
   const handlePetPositionUpdate = (position: Vector3 | null, direction?: Vector3) => {
     petPositionRef.current = position;
     if (direction) {
@@ -166,7 +170,7 @@ const Game: React.FC<GameProps> = ({
     }
   };
 
-  // Создаем пустые функции-заглушки для временного отключения звуков
+  // Create empty no-op functions for temporarily disabling sounds
   const noop = () => {};
 
   return (
@@ -187,7 +191,7 @@ const Game: React.FC<GameProps> = ({
         isGameOver={isGameOver || isPaused}
         onZombieHit={handleZombieHit}
         onShoot={onShoot}
-        onZombieHurt={noop}
+        onZombieHurt={onZombieHurt}
         onUpdateDirection={setLocalPlayerDirection}
         setPlayerPosition={setPlayerPosition} 
         onShot={() => {}}
@@ -199,7 +203,14 @@ const Game: React.FC<GameProps> = ({
         setZombies={setZombies}
         isGameOver={isGameOver || isPaused}
         onPlayerDamage={handlePlayerDamage}
-        updatePositions={undefined} // Отключаем обновление позиций для мини-карты
+        updatePositions={(positions) => { 
+          zombiePositionsRef.current = positions;
+          // Force update zombie data in UI when positions change
+          setZombieData({
+            positions: positions,
+            killed: zombiesKilled
+          });
+        }}
         onZombieKilled={handleZombieHit}
       />
       

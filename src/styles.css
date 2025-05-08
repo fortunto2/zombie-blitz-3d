@@ -44,14 +44,19 @@ body {
   left: 30px;
   width: 200px;
   height: 20px;
-  background-color: rgba(0, 0, 0, 0.5);
-  border: 2px solid white;
+  background-color: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
   z-index: 1001;
+  overflow: hidden;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
 .health-bar-fill {
   height: 100%;
   background-color: crimson;
+  border-radius: 8px;
+  transition: width 0.3s ease-in-out;
 }
 
 .score {
@@ -63,6 +68,11 @@ body {
   color: white;
   text-shadow: 1px 1px 2px black;
   z-index: 1001;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 8px 15px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
 .game-over {
@@ -309,25 +319,26 @@ body {
   position: fixed;
   bottom: 30px;
   right: 30px;
-  width: 100px;
-  height: 100px;
-  background-color: rgba(0, 0, 0, 0.5);
+  width: 120px;
+  height: 120px;
+  background-color: rgba(0, 0, 0, 0.6);
   border: 2px solid white;
   border-radius: 50%;
   z-index: 1001;
   overflow: hidden;
   position: relative;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
 }
 
 /* Добавляем перекрестие в центре мини-карты */
 .mini-map:after {
   content: '';
   position: absolute;
-  width: 100px;
-  height: 100px;
+  width: 120px;
+  height: 120px;
   top: 0;
   left: 0;
-  background-image: radial-gradient(circle, transparent 48px, rgba(255, 255, 255, 0.2) 50px);
+  background-image: radial-gradient(circle, transparent 58px, rgba(255, 255, 255, 0.2) 60px);
   pointer-events: none;
 }
 
@@ -393,16 +404,42 @@ body {
   position: fixed;
   top: 30px;
   left: 30px;
-  font-size: 18px;
+  font-size: 20px;
   color: white;
   text-shadow: 1px 1px 2px black;
   z-index: 1001;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 15px 20px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
 .active-zombies {
-  margin-bottom: 5px;
+  margin-bottom: 10px;
+  font-weight: bold;
+  color: #ffffff;
 }
 
 .killed-zombies {
   color: #ff8800;
+  font-weight: bold;
+}
+
+/* Стили для панелей статистики */
+.fps-stats,
+.ms-stats,
+.mb-stats {
+  margin-bottom: 5px !important;
+  background-color: rgba(0, 0, 0, 0.7) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  border-radius: 5px !important;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Изменение размера панелей Stats, чтобы они были компактнее */
+.fps-stats canvas,
+.ms-stats canvas,
+.mb-stats canvas {
+  height: 40px !important;
 } 

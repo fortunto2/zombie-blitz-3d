@@ -363,10 +363,10 @@ const Zombies: React.FC<ZombiesProps> = ({
   // Для системы Фибоначчи и волн
   const gameStartTime = useRef<number>(Date.now());
   const lastWaveTime = useRef<number>(Date.now());
-  const nextWaveInterval = useRef<number>(60000); // 1 минута между волнами
-  const spawnBurst = useRef<number>(0); // Количество зомби для создания в текущей волне
-  const spawnBurstRemaining = useRef<number>(0); // Сколько осталось создать в текущей волне
-  const burstSpawnInterval = useRef<number>(500); // Интервал между спавнами в волне
+  const nextWaveInterval = useRef<number>(60000); // 1 minute between waves
+  const spawnBurst = useRef<number>(0); // Number of zombies to create in current wave
+  const spawnBurstRemaining = useRef<number>(0); // How many left to create in current wave
+  const burstSpawnInterval = useRef<number>(500); // Interval between spawns in wave
   const lastBurstSpawnTime = useRef<number>(0);
   
   // Константы для оптимизации
@@ -495,12 +495,13 @@ const Zombies: React.FC<ZombiesProps> = ({
       const zombiePoolStats = zombiePoolRef.current?.getStats() || { created: 0, reused: 0, poolSize: 0 };
       const warningPoolStats = warningPoolRef.current?.getStats() || { created: 0, reused: 0, poolSize: 0 };
       
-      console.log(`Zомби статистика: создано=${totalZombiesCreated}, удалено=${totalZombiesRemoved}, активных=${Object.keys(zombieRefs.current).length}`);
-      console.log(`Пул зомби: создано=${zombiePoolStats.created}, переиспользовано=${zombiePoolStats.reused}, размер пула=${zombiePoolStats.poolSize}`);
-      console.log(`Пул предупреждений: создано=${warningPoolStats.created}, переиспользовано=${warningPoolStats.reused}, размер пула=${warningPoolStats.poolSize}`);
+      console.log(`Zombie statistics: created=${totalZombiesCreated}, removed=${totalZombiesRemoved}, active=${Object.keys(zombieRefs.current).length}`);
+      console.log(`Zombie pool: created=${zombiePoolStats.created}, reused=${zombiePoolStats.reused}, pool size=${zombiePoolStats.poolSize}`);
+      console.log(`Warning pool: created=${warningPoolStats.created}, reused=${warningPoolStats.reused}, pool size=${warningPoolStats.poolSize}`);
     }, 10000);
     
     return () => {
+      // Clean up on unmount
       // При размонтировании очищаем пулы
       zombiePoolRef.current?.clear();
       warningPoolRef.current?.clear();
@@ -563,7 +564,7 @@ const Zombies: React.FC<ZombiesProps> = ({
     // Проверяем, не превышен ли жесткий лимит зомби
     const currentZombieCount = Object.keys(zombieRefs.current).length;
     if (currentZombieCount >= HARD_MAX_ZOMBIES_LIMIT) {
-      console.log(`Достигнут жесткий лимит зомби (${currentZombieCount}/${HARD_MAX_ZOMBIES_LIMIT}), отменяем создание`);
+      console.log(`Reached hard zombie limit (${currentZombieCount}/${HARD_MAX_ZOMBIES_LIMIT}), canceling creation`);
       return null;
     }
     
@@ -679,7 +680,7 @@ const Zombies: React.FC<ZombiesProps> = ({
     };
     
     // Логируем создание зомби
-    console.log(`Создан зомби ${id} с позицией ${position.x.toFixed(2)}, ${position.z.toFixed(2)}`);
+    console.log(`Created zombie ${id} at position ${position.x.toFixed(2)}, ${position.z.toFixed(2)}`);
     
     zombieRefs.current[id] = zombieObj;
     
@@ -757,7 +758,7 @@ const Zombies: React.FC<ZombiesProps> = ({
     
     zombieWarnings.current[id] = warning;
     
-    console.log(`Создано предупреждение о зомби ${id} с позицией ${position.x.toFixed(2)}, ${position.z.toFixed(2)}`);
+    console.log(`Created zombie warning ${id} at position ${position.x.toFixed(2)}, ${position.z.toFixed(2)}`);
     
     return warning;
   };
@@ -800,7 +801,7 @@ const Zombies: React.FC<ZombiesProps> = ({
       }
       
       delete zombieWarnings.current[id];
-      console.log(`Удалено предупреждение о зомби ${id}`);
+      console.log(`Removed zombie warning ${id}`);
     }
   };
   
@@ -889,19 +890,19 @@ const Zombies: React.FC<ZombiesProps> = ({
       lastWaveTime.current = now;
       
       // Вычисляем размер волны (количество зомби) по Фибоначчи и увеличиваем в 10 раз
-      spawnBurst.current = fibonacci(wave.current + 5) * 10; // Увеличено в 10 раз!
+      spawnBurst.current = fibonacci(wave.current + 5) * 10; // Increased by 10x!
       spawnBurstRemaining.current = spawnBurst.current;
       
       // Увеличиваем базовую скорость зомби
       baseZombieSpeed.current = Math.min(8, baseZombieSpeed.current + 0.2);
       
       // Уменьшаем интервал между волнами в 2 раза
-      nextWaveInterval.current = Math.max(15000, 30000 - wave.current * 2000); // Уменьшено до 15 секунд минимум вместо 30
+      nextWaveInterval.current = Math.max(15000, 30000 - wave.current * 2000); // Reduced to 15 seconds minimum from 30
       
-      console.log(`===== НОВАЯ ВОЛНА ${wave.current} =====`);
-      console.log(`Количество зомби: ${spawnBurst.current}`);
-      console.log(`Базовая скорость: ${baseZombieSpeed.current.toFixed(1)}`);
-      console.log(`Следующая волна через: ${(nextWaveInterval.current / 1000).toFixed(0)} секунд`);
+      console.log(`===== NEW WAVE ${wave.current} =====`);
+      console.log(`Number of zombies: ${spawnBurst.current}`);
+      console.log(`Base speed: ${baseZombieSpeed.current.toFixed(1)}`);
+      console.log(`Next wave in: ${(nextWaveInterval.current / 1000).toFixed(0)} seconds`);
     }
     
     // Проверяем, нужно ли спавнить зомби из текущей волны
@@ -1236,17 +1237,13 @@ const Zombies: React.FC<ZombiesProps> = ({
     
     // Собираем данные о позициях зомби для мини-карты с пониженной частотой
     if (updatePositions && 
-        ((!lowPerformanceMode.current && frameCount.current % 3 === 0) ||
-         (lowPerformanceMode.current && frameCount.current % 6 === 0) ||
-         (criticalPerformanceMode.current && frameCount.current % 10 === 0) ||
-         (ultraLowGraphicsMode.current && frameCount.current % 15 === 0))) {
+        ((!lowPerformanceMode.current && frameCount.current % 2 === 0) ||
+         (lowPerformanceMode.current && frameCount.current % 3 === 0) ||
+         (criticalPerformanceMode.current && frameCount.current % 5 === 0) ||
+         (ultraLowGraphicsMode.current && frameCount.current % 7 === 0))) {
       
-      // Сокращаем количество данных, отправляемых для обновления
+      // Send all zombie positions for UI update
       const positions = Object.values(zombieRefs.current)
-        // В критическом режиме отправляем только позиции ближайших зомби
-        .filter(zombie => 
-          !criticalPerformanceMode.current || 
-          zombie.mesh.position.distanceTo(playerPosition) < 15)
         .map(zombie => {
           // Получаем направление взгляда из поворота зомби
           const direction = new THREE.Vector3(0, 0, 1)
@@ -1406,7 +1403,7 @@ const Zombies: React.FC<ZombiesProps> = ({
         // Если зомби близко к игроку и достаточно времени прошло с последнего удара
         if (distanceToPlayer < 1.5 && now - zombie.lastDamageTime > 1000) {
           zombie.lastDamageTime = now;
-          onPlayerDamage(10); // Наносим урон игроку
+          onPlayerDamage(10); // Deal damage to player, this will trigger zombie attack sound
         }
       }
     }
@@ -1559,7 +1556,7 @@ const Zombies: React.FC<ZombiesProps> = ({
       let damage = 0;
       if (isHeadshot) {
         damage = 100; // Мгновенное убийство при хедшоте
-        console.log(`ХЕДШОТ! Мгновенное убийство зомби ${id}`);
+        console.log(`HEADSHOT! Instant kill for zombie ${id}`);
       } else {
         damage = isPetAttack ? 10 : 34; // Стандартный урон
       }
@@ -1567,7 +1564,7 @@ const Zombies: React.FC<ZombiesProps> = ({
       // Уменьшаем здоровье
       zombie.health -= damage;
       
-      console.log(`Зомби ${id} получил урон ${damage} от ${isPetAttack ? 'питомца' : 'игрока'}${isHeadshot ? ' (ХЕДШОТ!)' : ''}. Здоровье: ${previousHealth} -> ${zombie.health}`);
+      console.log(`Zombie ${id} took ${damage} damage from ${isPetAttack ? 'pet' : 'player'}${isHeadshot ? ' (HEADSHOT!)' : ''}. Health: ${previousHealth} -> ${zombie.health}`);
       
       // Сбрасываем флаг атаки питомца после применения урона и логирования
       if (zombie.mesh.userData) {
@@ -1586,7 +1583,7 @@ const Zombies: React.FC<ZombiesProps> = ({
       
       // Получаем цвет зомби по его здоровью
       const color = getZombieColorByHealth(zombie.health);
-      console.log(`Устанавливаем цвет для зомби: ${color.getHexString()}`);
+      console.log(`Setting color for zombie: ${color.getHexString()}`);
       
       // Применяем цвет к основному материалу зомби напрямую
       if (zombie.coloredMaterial) {
@@ -1637,7 +1634,7 @@ const Zombies: React.FC<ZombiesProps> = ({
           zombie.mesh.rotation.y = currentYRotation;
         }
         
-        console.log(`Зомби ${id} умирает, начинаем анимацию ${isHeadshot ? 'взрыва' : 'падения'}`);
+        console.log(`Zombie ${id} is dying, starting ${isHeadshot ? 'explosion' : 'falling'} animation`);
         
         // Вызываем обработчик убийства зомби, если он задан
         if (onZombieKilled) {
@@ -1699,21 +1696,21 @@ const Zombies: React.FC<ZombiesProps> = ({
     
     // Добавляем функцию для сброса волны зомби
     scene.userData.resetZombieWave = () => {
-      console.log('Сброс волны зомби');
+      console.log('Resetting zombie wave');
       
-      // Сбрасываем счетчик волн
+      // Reset wave counter
       wave.current = 1;
       
-      // Сбрасываем скорость зомби
+      // Reset zombie speed
       baseZombieSpeed.current = 3;
       
-      // Сбрасываем время последнего спавна
+      // Reset last spawn time
       lastSpawnTime.current = 0;
       
-      // Сбрасываем параметры волн
+      // Reset wave parameters
       gameStartTime.current = Date.now();
       lastWaveTime.current = Date.now();
-      nextWaveInterval.current = 60000; // 1 минута до первой волны
+      nextWaveInterval.current = 60000; // 1 minute to first wave
       spawnBurst.current = 0;
       spawnBurstRemaining.current = 0;
     };
@@ -1891,7 +1888,7 @@ const Zombies: React.FC<ZombiesProps> = ({
               zombie.mesh.rotation.z = 0;
               zombie.mesh.rotation.y = currentYRotation;
             }
-            console.log(`Зомби ${id} умирает, начинаем анимацию ${isHeadshot ? 'взрыва' : 'падения'}`);
+            console.log(`Zombie ${id} is dying, starting ${isHeadshot ? 'explosion' : 'falling'} animation`);
             if (onZombieKilled) {
               onZombieKilled(id);
             }

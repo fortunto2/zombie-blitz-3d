@@ -32,24 +32,26 @@ const UI: React.FC<UIProps> = ({
   zombieCount = 0,
   kills = 0
 }) => {
-  // Вычисляем количество активных зомби
-  const activeZombiesCount = zombieCount || (zombiePositions ? zombiePositions.filter(z => !z.isDying).length : 0);
-  const totalKills = kills || zombiesKilled;
+  // Calculate number of active zombies
+  const activeZombiesCount = zombiePositions && zombiePositions.length > 0 
+    ? zombiePositions.filter(z => !z.isDying).length 
+    : zombieCount;
+  const totalKills = zombiesKilled || kills;
   
-  // Масштаб мини-карты (размер арены / размер мини-карты)
-  const mapScale = 24 / 100; // 24 - размер арены, 100 - размер мини-карты в пикселях
+  // Mini-map scale (arena size / mini-map size)
+  const mapScale = 24 / 120; // 24 - arena size, 120 - mini-map size in pixels
   
-  // Длина указателя направления
-  const directionLength = 10; // длина "стрелки" направления
+  // Direction indicator length
+  const directionLength = 10; // length of the direction "arrow"
   
   return (
     <div className="ui-container">
       <div className="crosshair" />
       
-      {/* Счетчики зомби */}
+      {/* Zombie counters */}
       <div className="zombie-counters">
-        <div className="active-zombies">Активные зомби: {activeZombiesCount}</div>
-        <div className="killed-zombies">Уничтожено зомби: {totalKills}</div>
+        <div className="active-zombies">Active Zombies: {activeZombiesCount}</div>
+        <div className="killed-zombies">Zombies Killed: {totalKills}</div>
       </div>
       
       <div className="score">Score: {score}</div>
@@ -60,10 +62,10 @@ const UI: React.FC<UIProps> = ({
         />
       </div>
       
-      {/* Мини-карта с игроком всегда в центре */}
+      {/* Mini-map with player always in center */}
       {playerPosition && (
         <div className="mini-map">
-          {/* Игрок всегда в центре */}
+          {/* Player is always in center */}
           <div className="player-dot" style={{ left: '50%', top: '50%' }}>
             {playerDirection && (
               <div 
@@ -76,7 +78,7 @@ const UI: React.FC<UIProps> = ({
             )}
           </div>
           
-          {/* Зомби отображаются относительно игрока */}
+          {/* Zombies are displayed relative to player */}
           {zombiePositions && zombiePositions.map(zombie => (
             <div 
               key={zombie.id}
@@ -98,7 +100,7 @@ const UI: React.FC<UIProps> = ({
             </div>
           ))}
           
-          {/* Собака отображается относительно игрока */}
+          {/* Dog is displayed relative to player */}
           {isPetEnabled && petPosition && (
             <div 
               className="pet-dot"
@@ -124,7 +126,7 @@ const UI: React.FC<UIProps> = ({
       {isPetEnabled && (
         <div className="pet-status">
           <div className="icon"></div>
-          <span>Собака активна</span>
+          <span>Dog Active</span>
         </div>
       )}
       
@@ -132,7 +134,7 @@ const UI: React.FC<UIProps> = ({
         <div className="game-over">
           <h2>Game Over</h2>
           <p>Your score: {score}</p>
-          <p>Зомби уничтожено: {totalKills}</p>
+          <p>Zombies killed: {totalKills}</p>
           <button onClick={onRestart}>Play Again</button>
         </div>
       )}

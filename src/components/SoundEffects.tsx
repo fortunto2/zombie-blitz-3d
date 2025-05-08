@@ -12,6 +12,7 @@ export interface SoundEffectsRef {
   playGunshot: () => void;
   playZombieHurt: () => void;
   playZombieDeath: () => void;
+  playPlayerHurt: () => void;
 }
 
 // Компонент звуковых эффектов - экспортируем с forwardRef, чтобы получить ссылку извне
@@ -23,6 +24,7 @@ const SoundEffects = forwardRef<SoundEffectsRef, SoundEffectsProps>(
     const gunshotRef = useRef<HTMLAudioElement | null>(null);
     const zombieHurtRef = useRef<HTMLAudioElement | null>(null);
     const zombieDeathRef = useRef<HTMLAudioElement | null>(null);
+    const playerHurtRef = useRef<HTMLAudioElement | null>(null);
 
     // Функции для воспроизведения звуков
     const playDogBark = () => {
@@ -80,6 +82,19 @@ const SoundEffects = forwardRef<SoundEffectsRef, SoundEffectsProps>(
       }
     };
 
+    // Function to play player hurt sound
+    const playPlayerHurt = () => {
+      if (isEnabled && playerHurtRef.current) {
+        playerHurtRef.current.currentTime = 0;
+        playerHurtRef.current.volume = 0.6; // Lower volume compared to zombie
+        playerHurtRef.current.playbackRate = 1.2; // Slightly faster playback for differentiation
+        playerHurtRef.current.play().catch(err => {
+          console.log('Error playing player hurt sound:', err);
+          playerHurtRef.current!.src = '/assets/sounds/zombie_hurt.mp3';
+        });
+      }
+    };
+
     // Экспортируем функции через ref
     useEffect(() => {
       if (ref) {
@@ -89,7 +104,8 @@ const SoundEffects = forwardRef<SoundEffectsRef, SoundEffectsProps>(
           playDogBite,
           playGunshot,
           playZombieHurt,
-          playZombieDeath
+          playZombieDeath,
+          playPlayerHurt
         };
       }
     }, [ref, isEnabled]);
@@ -119,6 +135,11 @@ const SoundEffects = forwardRef<SoundEffectsRef, SoundEffectsProps>(
         <audio 
           ref={zombieDeathRef} 
           src="/assets/sounds/zombie_death.mp3" 
+          preload="auto"
+        />
+        <audio 
+          ref={playerHurtRef} 
+          src="/assets/sounds/zombie_hurt.mp3" 
           preload="auto"
         />
       </div>

@@ -17,7 +17,7 @@ const App: React.FC = () => {
   const [isPetEnabled, setIsPetEnabled] = useState(true);
   const soundEffectsRef = useRef<SoundEffectsRef>(null);
   
-  // Состояния для мини-карты и счетчиков
+  // States for mini-map and counters
   const [playerPosition, setPlayerPosition] = useState<Vector3 | null>(null);
   const [playerDirection, setPlayerDirection] = useState<Vector3 | null>(null);
   const [petPosition, setPetPosition] = useState<Vector3 | null>(null);
@@ -25,18 +25,18 @@ const App: React.FC = () => {
   const [zombiePositions, setZombiePositions] = useState<{ id: string; position: Vector3; isDying: boolean; direction?: Vector3 }[]>([]);
   const [zombiesKilled, setZombiesKilled] = useState(0);
   
-  // Колбэк для обновления данных о зомби
+  // Callback for updating zombie data
   const handleZombieDataUpdate = (data: { positions: any[]; killed: number }) => {
     setZombiePositions(data.positions);
     setZombiesKilled(data.killed);
   };
 
-  // Обработчик обновления направления игрока
+  // Handler for updating player direction
   const handlePlayerDirectionUpdate = (direction: Vector3) => {
     setPlayerDirection(direction);
   };
 
-  // Обработчик обновления позиции и направления питомца
+  // Handler for updating pet position and direction
   const handlePetUpdate = (position: Vector3 | null, direction?: Vector3) => {
     setPetPosition(position);
     if (direction) {
@@ -86,7 +86,7 @@ const App: React.FC = () => {
     setIsPaused(false);
   };
   
-  // Обработчики звуков
+  // Sound handlers
   const handlePetSound = (soundType: 'bark' | 'bite') => {
     if (soundEffectsRef.current) {
       if (soundType === 'bark') {
@@ -114,8 +114,14 @@ const App: React.FC = () => {
       soundEffectsRef.current.playZombieDeath();
     }
   };
+
+  const handlePlayerHurt = () => {
+    if (soundEffectsRef.current) {
+      soundEffectsRef.current.playPlayerHurt();
+    }
+  };
   
-  // Обработка клавиши ESC для паузы
+  // Handle ESC key for pause
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Escape' && !showMenu && !isGameOver) {
@@ -129,11 +135,11 @@ const App: React.FC = () => {
     };
   }, [showMenu, isGameOver]);
 
-  // Стиль для контейнера статистики, чтобы панели шли друг под другом
+  // Style for stats container to stack panels
   const statsContainerStyle: React.CSSProperties = {
     position: 'fixed',
-    top: '0px',
-    left: '0px',
+    bottom: '30px',
+    right: '160px',
     zIndex: 1000,
     display: 'flex',
     flexDirection: 'column'
@@ -153,28 +159,29 @@ const App: React.FC = () => {
             onShoot={handleShoot}
             onZombieHurt={handleZombieHurt}
             onZombieDeath={handleZombieDeath}
+            onPlayerHurt={handlePlayerHurt}
             setZombieData={handleZombieDataUpdate}
             setPetPosition={handlePetUpdate}
             setPlayerPos={setPlayerPosition}
             setPlayerDirection={handlePlayerDirectionUpdate}
           />
         </Suspense>
-        {/* Контейнер для панелей статистики */}
-        <group> {/* Используем group для позиционирования в Canvas, если Stats не принимает style напрямую */}
-          {/* Stats компонент не принимает style напрямую. Мы можем обернуть их или использовать className и CSS файл. */}
-          {/* Для простоты, разместим их в разных углах или придется добавлять CSS */}
-          {/* Так как Stats рендерятся в DOM элемент вне Canvas, мы можем их стилизовать через CSS или div */}
+        {/* Container for statistics panels */}
+        <group> {/* Using group for positioning in Canvas if Stats doesn't accept style directly */}
+          {/* Stats component doesn't accept style directly. We can wrap them or use className and CSS file. */}
+          {/* For simplicity, we'll place them in different corners or we'd need to add CSS */}
+          {/* Since Stats are rendered to a DOM element outside Canvas, we can style them via CSS or div */}
         </group>
       </Canvas>
 
-      {/* Помещаем Stats вне Canvas, чтобы легче стилизовать их положение */}
+      {/* Place Stats outside Canvas for easier styling */}
       <div style={statsContainerStyle}>
         <Stats showPanel={0} className="fps-stats" /> {/* FPS */}
         <Stats showPanel={1} className="ms-stats" />  {/* MS */}
         <Stats showPanel={2} className="mb-stats" />  {/* MB */}
       </div>
       
-      {/* Включаем звуковые эффекты, но только для выстрелов */}
+      {/* Enable sound effects, but only for shots and zombie sounds */}
       <SoundEffects 
         ref={soundEffectsRef}
         isEnabled={!showMenu && !isPaused && !isGameOver}
@@ -194,11 +201,11 @@ const App: React.FC = () => {
             isGameOver={isGameOver} 
             onRestart={handleRestart} 
             isPetEnabled={false}
-            playerPosition={null}
-            playerDirection={null}
-            zombiePositions={[]}
-            petPosition={null}
-            petDirection={null}
+            playerPosition={playerPosition}
+            playerDirection={playerDirection}
+            zombiePositions={zombiePositions}
+            petPosition={petPosition}
+            petDirection={petDirection}
             zombiesKilled={zombiesKilled}
           />
           
