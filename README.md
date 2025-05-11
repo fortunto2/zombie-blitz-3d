@@ -1,95 +1,59 @@
-# Zombie Blitz 3D
+# Monster Lane Runner
 
-A fast-paced 3D first-person shooter game where you battle against waves of zombies. Built with React Three Fiber.
+3D endless runner game built with React Three Fiber, inspired by the classic obstacle avoidance gameplay.
 
-![Zombie Blitz 3D](https://github.com/fortunto2/zombie-blitz-3d/raw/main/public/assets/screenshot.png)
+## Game Concept
 
-## Features
+In Monster Lane Runner, you control an orange car that automatically moves forward through a pixelated environment. Two types of monsters appear on the sides of the road:
 
-- 🧟 Wave-based zombie hordes with increasing difficulty
-- 🔫 First-person shooter gameplay with weapon effects
-- 🐕 Optional dog companion that helps you hunt zombies
-- 🏛️ 3D arena with obstacles and strategic positions
-- 🔊 Dynamic sound effects for an immersive experience
-- 📊 Score tracking and health system
-- 🎮 Full keyboard and mouse controls
+- **Yellow Monster**: When it opens its mouth with an "AAAAH" sound, you need to press DOWN ARROW to duck under a high middle obstacle.
+- **White Monster**: When it opens its mouth with a "Ssshhh" sound, you need to press UP ARROW to jump through a gap between side pillars.
+
+Your goal is to survive as long as possible by reacting correctly to the monster cues and successfully navigating the obstacles.
+
+## Technical Stack
+
+- React
+- TypeScript
+- Three.js
+- React Three Fiber
+- React Three Drei
 
 ## Installation
 
-### Prerequisites
-
-- Node.js (v14 or newer)
-- pnpm (recommended) or npm
-
-### Setup
-
-1. Clone the repository:
 ```bash
-git clone https://github.com/fortunto2/zombie-blitz-3d.git
-cd zombie-blitz-3d
-```
-
-2. Install dependencies:
-```bash
+# Install dependencies
 pnpm install
-# or with npm
-npm install
-```
 
-3. Start the development server:
-```bash
+# Run development server
 pnpm dev
-# or with npm
-npm run dev
+
+# Build for production
+pnpm build
 ```
 
-4. Open your browser and navigate to `http://localhost:5173`
+## Controls
 
-## Game Controls
+- **UP ARROW** or **W**: Jump
+- **DOWN ARROW** or **S**: Duck
+- **ESC**: Pause game
 
-- **WASD** - Move around
-- **Mouse** - Look around
-- **Left Click** - Shoot
-- **ESC** - Pause game
+## Game Features
 
-## Technical Information
+- Procedurally generated obstacles
+- Monster cues to signal upcoming obstacles
+- Sound effects for enhanced gameplay
+- Score tracking
+- Game over and restart functionality
 
-### Built With
+## Future Improvements
 
-- [React](https://reactjs.org/) - UI Library
-- [React Three Fiber](https://github.com/pmndrs/react-three-fiber) - React renderer for Three.js
-- [Three.js](https://threejs.org/) - JavaScript 3D library
-- [TypeScript](https://www.typescriptlang.org/) - Type-safe JavaScript
-- [Vite](https://vitejs.dev/) - Frontend build tool
+- More detailed monster models and animations
+- Varied wall patterns
+- Power-ups
+- Mobile touch controls
+- High score leaderboard
 
-### Project Structure
+## Credits
 
-- `src/components/` - Game components (Player, Zombies, Arena, etc.)
-- `src/hooks/` - Custom React hooks
-- `src/models/` - 3D model components
-- `src/engine/` - Game engine functionality
-- `src/utils/` - Utility functions
-- `public/assets/` - Game assets (sounds, images, etc.)
-
-## Performance Optimizations
-
-The game includes several performance optimizations:
-
-- Efficient zombie spawning system with visual warnings
-- Collision detection optimizations
-- State batching to prevent React rendering issues
-- Level of detail adjustments for distant objects
-- Custom shaders for visual effects
-
-## License
-
-MIT License - See the LICENSE file for details.
-
-## Contributing
-
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/fortunto2/zombie-blitz-3d/issues).
-
-## Known Issues
-
-- In fullscreen mode, high CPU usage might occur in some browsers
-- Certain key combinations can cause input conflicts 
+Developed as a demonstration of Three.js and React Three Fiber capabilities. 

@@ -1,25 +1,26 @@
-* {
-  box-sizing: border-box;
+/* Base styles */
+body, html {
   margin: 0;
   padding: 0;
+  font-family: sans-serif;
+  background-color: #000;
+  color: #fff;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
 }
 
-html,
-body,
+canvas {
+  display: block;
+}
+
 #root {
   width: 100%;
   height: 100%;
-  overflow: hidden;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: #000;
-  color: #fff;
+* {
+  box-sizing: border-box;
 }
 
 /* Обновленные стили для интерфейса */
@@ -451,40 +452,71 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 1002;
-  touch-action: none;
-  height: 200px;
+  z-index: 9999; /* Максимально высокий z-index */
+  height: 250px;
+  pointer-events: auto !important;
 }
 
 .joystick-zone {
   position: absolute;
   left: 30px;
-  bottom: 30px;
-  width: 120px;
-  height: 120px;
+  bottom: 80px;
+  width: 150px;
+  height: 150px;
   background-color: rgba(0, 0, 0, 0.2);
   border-radius: 50%;
+  border: 2px solid white;
+  z-index: 9999;
+  pointer-events: auto !important;
 }
 
 .shoot-button {
   position: absolute;
-  right: 30px;
-  bottom: 30px;
-  width: 80px;
-  height: 80px;
+  right: 50px;
+  bottom: 100px;
+  width: 120px;
+  height: 120px;
   border-radius: 50%;
   background-color: crimson;
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
   cursor: pointer;
+  z-index: 9999;
+  pointer-events: auto !important;
+  border: 2px solid white;
+  color: white;
+  font-weight: bold;
+  font-size: 24px;
 }
 
 .shoot-button span {
   color: white;
   font-weight: bold;
-  font-size: 16px;
+  font-size: 28px;
+  pointer-events: none;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.shoot-button:active {
+  background-color: #ff0033;
+  transform: scale(0.95);
+}
+
+.mobile-hint {
+  position: absolute;
+  top: 60px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: white;
+  font-size: 18px;
+  font-weight: bold;
+  text-shadow: 1px 1px 3px black;
+  background-color: rgba(0, 0, 0, 0.5);
+  padding: 10px;
+  z-index: 1005;
   pointer-events: none;
 }
 
@@ -494,25 +526,64 @@ body {
     display: block;
   }
   
-  /* Настраиваем положение мини-карты для мобильных */
-  .mini-map {
-    right: 20px;
-    bottom: 150px;
-    width: 100px;
-    height: 100px;
-  }
-  
-  /* Настраиваем размер индикаторов направления */
-  .mini-map:after {
-    width: 100px;
-    height: 100px;
-    background-image: radial-gradient(circle, transparent 48px, rgba(255, 255, 255, 0.2) 50px);
-  }
-  
-  /* Настраиваем стиль для статистики на мобильных */
+  /* Скрываем мини-карту и статистику на мобильных */
+  .mini-map,
   .fps-stats,
   .ms-stats,
   .mb-stats {
-    display: none; /* Скрываем статистику на мобильных */
+    display: none;
   }
+  
+  /* Перемещаем счетчики зомби повыше, чтобы не мешали */
+  .zombie-counters {
+    top: 10px;
+    left: 10px;
+    font-size: 16px;
+    padding: 8px 12px;
+  }
+  
+  /* Уменьшаем счетчик очков и перемещаем его */
+  .score {
+    font-size: 18px;
+    top: 10px;
+    right: 10px;
+    padding: 5px 10px;
+  }
+  
+  /* Настраиваем полосу здоровья для мобильных */
+  .health-bar {
+    bottom: 15px;
+    left: 15px;
+    width: 150px;
+    height: 15px;
+  }
+  
+  /* Для мобильных устройств - важно чтобы события касания проходили через UI */
+  .ui-container {
+    pointer-events: none !important;
+  }
+  
+  body, html, #root, canvas {
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+  
+  /* Убираем стандартное масштабирование пальцами на мобильных */
+  body {
+    touch-action: none;
+    -webkit-touch-callout: none; /* iOS Safari */
+    -webkit-user-select: none;   /* Safari */
+    -khtml-user-select: none;    /* Konqueror HTML */
+    -moz-user-select: none;      /* Firefox */
+    -ms-user-select: none;       /* Internet Explorer/Edge */
+    user-select: none;           /* Non-prefixed version */
+  }
+}
+
+/* Добавляем отладочную информацию */
+.debug-info {
+  margin-top: 8px;
+  font-size: 16px;
+  color: #ffcc00;
+  opacity: 0.9;
 } 

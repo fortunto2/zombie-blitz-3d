@@ -1,250 +1,254 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { PointerLockControls } from '@react-three/drei';
-import { Vector3 } from 'three';
+import { PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
-
-import Arena from './Arena';
 import Player from './Player';
-import Zombies from './Zombies';
-import Pet from './Pet';
+import Arena from './Arena';
 
 interface GameProps {
   isGameOver: boolean;
   onScoreChange: (score: number) => void;
-  onHealthChange: (health: number) => void;
   isPaused: boolean;
-  isPetEnabled: boolean;
-  onPetSound: (soundType: 'bark' | 'bite') => void;
-  onShoot: () => void;
-  onZombieHurt: () => void;
-  onZombieDeath: () => void;
-  onPlayerHurt: () => void;
-  setZombieData: (data: { positions: any[]; killed: number }) => void;
-  setPetPosition: (position: Vector3 | null, direction?: Vector3) => void;
-  setPlayerPos: (position: Vector3) => void;
-  setPlayerDirection?: (direction: Vector3) => void;
-  mobileMovement?: {x: number, y: number};
 }
 
-const Game: React.FC<GameProps> = ({ 
-  isGameOver, 
-  onScoreChange, 
-  onHealthChange, 
-  isPaused,
-  isPetEnabled,
-  onPetSound,
-  onShoot,
-  onZombieHurt,
-  onZombieDeath,
-  onPlayerHurt,
-  setZombieData,
-  setPetPosition,
-  setPlayerPos,
-  setPlayerDirection,
-  mobileMovement
-}) => {
-  const controlsRef = useRef<any>(null);
-  const [zombies, setZombies] = useState<any[]>([]);
-  const [playerPosition, setPlayerPosition] = useState(new Vector3(0, 1, 0));
-  const [playerDirection, setLocalPlayerDirection] = useState<Vector3>(new Vector3(0, 0, 1));
-  const [playerVelocity, setPlayerVelocity] = useState(new Vector3());
-  const [score, setScore] = useState(0);
-  const [health, setHealth] = useState(100);
-  const [isLocked, setIsLocked] = useState(false);
-  const [zombiesKilled, setZombiesKilled] = useState(0);
-  const petPositionRef = useRef<Vector3 | null>(null);
-  const zombiePositionsRef = useRef<{id: string; position: Vector3; isDying: boolean; direction?: Vector3}[]>([]);
-  const petDirectionRef = useRef<Vector3 | null>(null);
+const Game: React.FC<GameProps> = ({ isGameOver, onScoreChange, isPaused }) => {
+  const score = useRef(0);
+  const scene = useThree((state) => state.scene);
+  const camera = useRef<THREE.PerspectiveCamera>(null);
   
-  // Get access to Three.js scene
-  const { scene } = useThree();
-  const [gameScene, setGameScene] = useState<THREE.Scene | null>(null);
+  // Handle walls and obstacles
+  const walls = useRef<THREE.Group[]>([]);
+  const nextWallTime = useRef(0);
   
-  // Scene initialization
+  // Monster cues
+  const yellowMonsterRef = useRef<THREE.Group>(null);
+  const whiteMonsterRef = useRef<THREE.Group>(null);
+  const currentCueType = useRef<'yellow' | 'white' | null>(null);
+  const cueEndTime = useRef(0);
+  
+  // Player state
+  const isDucking = useRef(false);
+  const isJumping = useRef(false);
+  
+  // Configuration
+  const WALL_SPAWN_Z = -100;
+  const WALL_DESPAWN_Z = 20;
+  const ROAD_WIDTH = 10;
+  const CAR_SPEED = 0.3;
+  const MONSTER_CUE_DURATION = 1500; // ms
+  const MONSTER_COOLDOWN_MIN = 2000; // ms
+  const MONSTER_COOLDOWN_MAX = 5000; // ms
+
+  // Reset game state
   useEffect(() => {
-    if (scene) {
-      setGameScene(scene);
-      console.log('Scene initialized');
+    if (!isGameOver) {
+      score.current = 0;
+      onScoreChange(0);
+      
+      // Clear existing walls
+      walls.current.forEach(wall => scene.remove(wall));
+      walls.current = [];
+      
+      // Reset monster cues
+      currentCueType.current = null;
+      if (yellowMonsterRef.current) {
+        yellowMonsterRef.current.getObjectByName('mouth')!.visible = false;
+      }
+      if (whiteMonsterRef.current) {
+        whiteMonsterRef.current.getObjectByName('mouth')!.visible = false;
+      }
+      
+      // Set time for next monster cue
+      nextWallTime.current = Date.now() + MONSTER_COOLDOWN_MIN + 
+        Math.random() * (MONSTER_COOLDOWN_MAX - MONSTER_COOLDOWN_MIN);
     }
-  }, [scene]);
-  
-  // Handle pointer lock change
+  }, [isGameOver, scene]);
+
+  // Handle keyboard input
   useEffect(() => {
-    const handleLockChange = () => {
-      setIsLocked(!!document.pointerLockElement);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isGameOver || isPaused) return;
+      
+      switch (event.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          if (!isJumping.current && !isDucking.current) {
+            isJumping.current = true;
+          }
+          break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          if (!isDucking.current && !isJumping.current) {
+            isDucking.current = true;
+          }
+          break;
+      }
     };
     
-    document.addEventListener('pointerlockchange', handleLockChange);
+    window.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('pointerlockchange', handleLockChange);
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
-
-  // Handle game over or pause
-  useEffect(() => {
-    if ((isGameOver || isPaused) && controlsRef.current) {
-      document.exitPointerLock();
-    }
   }, [isGameOver, isPaused]);
 
-  // Sync score and health with parent
-  useEffect(() => {
-    onScoreChange(score);
-  }, [score, onScoreChange]);
-
-  useEffect(() => {
-    onHealthChange(health);
-  }, [health, onHealthChange]);
-
-  // Sync player position with UI
-  useEffect(() => {
-    setPlayerPos(playerPosition);
-  }, [playerPosition, setPlayerPos]);
-
-  // Update zombie data for UI
-  useEffect(() => {
-    setZombieData({
-      positions: zombiePositionsRef.current,
-      killed: zombiesKilled
-    });
-  }, [zombiesKilled, setZombieData, zombiePositionsRef.current]);
-
-  // Temporarily disable pet position sync
-  // useEffect(() => {
-  //   setPetPosition(petPositionRef.current);
-  // }, [petPositionRef.current, setPetPosition]);
-
-  // Add effect for syncing direction with parent component
-  useEffect(() => {
-    if (setPlayerDirection) {
-      setPlayerDirection(playerDirection);
-    }
-  }, [playerDirection, setPlayerDirection]);
-
-  // Handle zombie hit - this happens only when the zombie is actually removed
-  const handleZombieHit = (zombieId: string) => {
-    setZombies(prev => prev.filter(z => z.id !== zombieId));
-    setScore(prev => prev + 10);
-    setZombiesKilled(prev => prev + 1);
+  // Create wall based on monster cue
+  const createWall = (type: 'yellow' | 'white') => {
+    const wallGroup = new THREE.Group();
+    wallGroup.userData.type = type;
+    wallGroup.userData.collided = false;
+    wallGroup.userData.passed = false;
     
-    // Temporarily disable zombie death sound
-    // onZombieDeath();
+    const wallHeight = 3;
+    const wallDepth = 1;
+    const pillarWidth = ROAD_WIDTH / 3 - 0.5;
+    
+    const brickMaterial = new THREE.MeshStandardMaterial({ color: 0xCC0000 });
+    
+    if (type === 'yellow') { // Needs DUCK: Obstacle is high in the middle
+      const middleObstacle = new THREE.Mesh(
+        new THREE.BoxGeometry(ROAD_WIDTH / 2, wallHeight / 2, wallDepth),
+        brickMaterial
+      );
+      middleObstacle.position.y = wallHeight * 0.75;
+      middleObstacle.castShadow = true;
+      middleObstacle.receiveShadow = true;
+      wallGroup.add(middleObstacle);
+      wallGroup.userData.obstacleBox = new THREE.Box3().setFromObject(middleObstacle);
+    } else if (type === 'white') { // Needs JUMP: Obstacles on sides
+      const leftPillar = new THREE.Mesh(
+        new THREE.BoxGeometry(pillarWidth, wallHeight, wallDepth),
+        brickMaterial
+      );
+      leftPillar.position.set(-ROAD_WIDTH / 2 + pillarWidth / 2, wallHeight / 2, 0);
+      leftPillar.castShadow = true;
+      leftPillar.receiveShadow = true;
+      wallGroup.add(leftPillar);
+      
+      const rightPillar = new THREE.Mesh(
+        new THREE.BoxGeometry(pillarWidth, wallHeight, wallDepth),
+        brickMaterial
+      );
+      rightPillar.position.set(ROAD_WIDTH / 2 - pillarWidth / 2, wallHeight / 2, 0);
+      rightPillar.castShadow = true;
+      rightPillar.receiveShadow = true;
+      wallGroup.add(rightPillar);
+      
+      wallGroup.userData.leftBox = new THREE.Box3().setFromObject(leftPillar);
+      wallGroup.userData.rightBox = new THREE.Box3().setFromObject(rightPillar);
+    }
+    
+    wallGroup.position.z = WALL_SPAWN_Z;
+    scene.add(wallGroup);
+    walls.current.push(wallGroup);
   };
 
-  // Handle player damage
-  const handlePlayerDamage = (damage: number) => {
-    setHealth(prev => Math.max(0, prev - damage));
-    // Play player hurt sound when player takes damage
-    onPlayerHurt();
-  };
-
-  // Pause game logic during pause
+  // Game loop
   useFrame(() => {
-    if (isPaused) {
-      return; // Stop all updates during pause
+    if (isGameOver || isPaused) return;
+    
+    const now = Date.now();
+    
+    // Handle monster cues
+    if (now > cueEndTime.current && currentCueType.current) {
+      currentCueType.current = null;
+      if (yellowMonsterRef.current) {
+        yellowMonsterRef.current.getObjectByName('mouth')!.visible = false;
+      }
+      if (whiteMonsterRef.current) {
+        whiteMonsterRef.current.getObjectByName('mouth')!.visible = false;
+      }
+      nextWallTime.current = now + MONSTER_COOLDOWN_MIN + 
+        Math.random() * (MONSTER_COOLDOWN_MAX - MONSTER_COOLDOWN_MIN);
     }
-  }, 0); // Priority 0 so this hook is called first
-
-  // Effect to reset game state when isGameOver changes
-  useEffect(() => {
-    if (isGameOver === false && gameScene) {
-      // Game has just been restarted
-      setScore(0);
-      setHealth(100);
-      setZombiesKilled(0);
+    
+    if (!currentCueType.current && now > nextWallTime.current) {
+      currentCueType.current = Math.random() < 0.5 ? 'yellow' : 'white';
+      cueEndTime.current = now + MONSTER_CUE_DURATION;
+      createWall(currentCueType.current);
       
-      // Reset zombie wave state
-      if (typeof gameScene.userData.resetZombieWave === 'function') {
-        console.log('Calling zombie wave reset on restart');
-        gameScene.userData.resetZombieWave();
-      } else {
-        console.warn('resetZombieWave function not found in scene userData');
+      if (currentCueType.current === 'yellow' && yellowMonsterRef.current) {
+        yellowMonsterRef.current.getObjectByName('mouth')!.visible = true;
+      } else if (currentCueType.current === 'white' && whiteMonsterRef.current) {
+        whiteMonsterRef.current.getObjectByName('mouth')!.visible = true;
       }
     }
-  }, [isGameOver, gameScene]);
-
-  // Pet position update - keep function but disable pet in render
-  const handlePetPositionUpdate = (position: Vector3 | null, direction?: Vector3) => {
-    petPositionRef.current = position;
-    if (direction) {
-      petDirectionRef.current = direction;
-    }
-  };
-
-  // Create empty no-op functions for temporarily disabling sounds
-  const noop = () => {};
-
-  // Обработка движения с мобильного джойстика
-  useEffect(() => {
-    if (mobileMovement && !isGameOver && !isPaused) {
-      // Создаем вектор направления из ввода джойстика
-      const moveDir = new Vector3(mobileMovement.x, 0, -mobileMovement.y).normalize();
+    
+    // Move walls
+    for (let i = walls.current.length - 1; i >= 0; i--) {
+      const wall = walls.current[i];
+      wall.position.z += CAR_SPEED;
       
-      // Применяем скорость движения
-      const moveSpeed = 0.1;
-      if (moveDir.length() > 0) {
-        setPlayerVelocity(moveDir.multiplyScalar(moveSpeed));
-        
-        // Также обновляем направление игрока, если он движется
-        if (moveDir.length() > 0.1) {
-          setLocalPlayerDirection(moveDir.clone());
-        }
+      // Remove walls that have gone past
+      if (wall.position.z > WALL_DESPAWN_Z) {
+        scene.remove(wall);
+        walls.current.splice(i, 1);
       }
     }
-  }, [mobileMovement, isGameOver, isPaused]);
+  });
 
   return (
     <>
-      <PointerLockControls ref={controlsRef} />
+      <PerspectiveCamera 
+        ref={camera} 
+        makeDefault 
+        position={[0, 5, 10]} 
+        fov={75}
+      />
       
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 5]} intensity={1} castShadow />
+      <ambientLight intensity={0.6} />
+      <directionalLight 
+        position={[5, 10, 7.5]} 
+        intensity={0.8} 
+        castShadow 
+      />
       
-      <Arena />
+      <Arena 
+        roadWidth={ROAD_WIDTH} 
+        roadLength={200}
+      />
       
       <Player 
-        position={playerPosition}
-        velocity={playerVelocity}
-        setPosition={setPlayerPosition}
-        setVelocity={setPlayerVelocity}
-        isLocked={isLocked}
-        isGameOver={isGameOver || isPaused}
-        onZombieHit={handleZombieHit}
-        onShoot={onShoot}
-        onZombieHurt={onZombieHurt}
-        onUpdateDirection={setLocalPlayerDirection}
-        setPlayerPosition={setPlayerPosition} 
-        onShot={() => {}}
+        isGameOver={isGameOver}
+        isDucking={isDucking}
+        isJumping={isJumping}
+        walls={walls}
+        onScoreChange={onScoreChange}
       />
       
-      <Zombies 
-        playerPosition={playerPosition}
-        zombies={zombies}
-        setZombies={setZombies}
-        isGameOver={isGameOver || isPaused}
-        onPlayerDamage={handlePlayerDamage}
-        updatePositions={(positions) => { 
-          zombiePositionsRef.current = positions;
-          // Force update zombie data in UI when positions change
-          setZombieData({
-            positions: positions,
-            killed: zombiesKilled
-          });
-        }}
-        onZombieKilled={handleZombieHit}
-      />
+      {/* Monsters */}
+      <group ref={yellowMonsterRef} position={[-ROAD_WIDTH / 2 - 4, 3, -30]}>
+        <mesh castShadow>
+          <coneGeometry args={[2.5, 6, 16]} />
+          <meshStandardMaterial color="yellow" />
+        </mesh>
+        <mesh 
+          name="mouth" 
+          position={[0, 0.5, 2.51]} 
+          rotation={[Math.PI / 12, 0, 0]}
+          visible={false}
+        >
+          <planeGeometry args={[2, 1.5]} />
+          <meshBasicMaterial color="black" side={THREE.DoubleSide} />
+        </mesh>
+      </group>
       
-      {/* Временно отключаем питомца */}
-      {/* {isPetEnabled && (
-        <Pet 
-          playerPosition={playerPosition}
-          isEnabled={isPetEnabled}
-          isGameOver={isGameOver || isPaused}
-          onPlaySound={onPetSound}
-          updatePosition={handlePetPositionUpdate}
-        />
-      )} */}
+      <group ref={whiteMonsterRef} position={[ROAD_WIDTH / 2 + 4, 2.5, -30]}>
+        <mesh castShadow>
+          <coneGeometry args={[2, 5, 16]} />
+          <meshStandardMaterial color="white" />
+        </mesh>
+        <mesh 
+          name="mouth" 
+          position={[0, 0.3, 2.01]} 
+          rotation={[Math.PI / 12, 0, 0]}
+          visible={false}
+        >
+          <planeGeometry args={[1.5, 0.8]} />
+          <meshBasicMaterial color="red" side={THREE.DoubleSide} />
+        </mesh>
+      </group>
     </>
   );
 };

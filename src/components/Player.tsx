@@ -1,530 +1,141 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
-import { Vector3, Raycaster, Mesh, Group } from 'three';
+import React, { useRef, useEffect } from 'react';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import Bullet from '../components/Bullet';
-import { v4 as uuidv4 } from 'uuid';
 
 interface PlayerProps {
-  position: Vector3;
-  velocity: Vector3;
-  setPosition: (pos: Vector3) => void;
-  setVelocity: (vel: Vector3) => void;
-  isLocked: boolean;
   isGameOver: boolean;
-  onZombieHit: (zombieId: string) => void;
-  onShoot?: () => void;
-  onZombieHurt?: () => void;
-  onUpdateDirection?: (direction: Vector3) => void;
-  setPlayerPosition?: (pos: Vector3) => void;
-  onShot?: (position: Vector3, direction: Vector3) => void;
+  isDucking: React.MutableRefObject<boolean>;
+  isJumping: React.MutableRefObject<boolean>;
+  walls: React.MutableRefObject<THREE.Group[]>;
+  onScoreChange: (score: number) => void;
 }
 
-interface BulletType {
-  id: string;
-  position: Vector3;
-  direction: Vector3;
-  hasHit: boolean;
-  createdAt: number;
-}
-
-interface MuzzleFlashType {
-  id: string;
-  position: Vector3;
-  direction: Vector3;
-  createdAt: number;
-}
-
-const Player: React.FC<PlayerProps> = ({
-  position,
-  velocity,
-  setPosition,
-  setVelocity,
-  isLocked,
-  isGameOver,
-  onZombieHit,
-  onShoot,
-  onZombieHurt,
-  onUpdateDirection,
-  setPlayerPosition,
-  onShot
+const Player: React.FC<PlayerProps> = ({ 
+  isGameOver, 
+  isDucking, 
+  isJumping, 
+  walls, 
+  onScoreChange 
 }) => {
-  const { camera, scene } = useThree();
-  const playerRef = useRef<any>(null);
-  const raycaster = useRef(new Raycaster());
-  const [bullets, setBullets] = useState<Array<BulletType>>([]);
-  const [muzzleFlashes, setMuzzleFlashes] = useState<Array<MuzzleFlashType>>([]);
-  const gunRef = useRef<Group>(null);
-  const lastShootTime = useRef<number>(0);
-  const isMoving = useRef<boolean>(false);
+  const playerRef = useRef<THREE.Mesh>(null);
+  const playerBoundingBox = useRef(new THREE.Box3());
+  const score = useRef(0);
   
-  // Физические параметры
-  const GRAVITY = 20;
-  const JUMP_FORCE = 8;
-  const MOVEMENT_SPEED = 8; // Увеличенная скорость движения
-  const BULLET_SPEED = 80; // Увеличиваем скорость пули (было 50)
+  // Jump and duck animation parameters
+  const jumpFrame = useRef(0);
+  const duckFrame = useRef(0);
+  const JUMP_HEIGHT = 1.5;
+  const JUMP_DURATION = 30; // frames
+  const DUCK_SCALE_Y = 0.5;
+  const DUCK_DURATION = 30; // frames
   
-  // Клавиши управления
-  const keys = useRef({
-    forward: false,
-    backward: false,
-    left: false,
-    right: false,
-    space: false,
-  });
-  
-  // Флаг для отслеживания, находится ли игрок на земле
-  const isOnGround = useRef(true);
-  
-  // Настройка камеры
+  // Update bounding box
   useEffect(() => {
-    camera.position.set(position.x, position.y + 1.6, position.z);
-  }, [camera, position]);
+    if (playerRef.current) {
+      playerBoundingBox.current.setFromObject(playerRef.current);
+    }
+  }, []);
   
-  // Обработка нажатий клавиш
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isLocked) return;
-      
-      switch(e.code) {
-        case 'KeyW':
-          keys.current.backward = true; // W двигает назад
-          isMoving.current = true;
-          break;
-        case 'KeyS':
-          keys.current.forward = true; // S двигает вперед
-          isMoving.current = true;
-          break;
-        case 'KeyA':
-          keys.current.left = true;
-          isMoving.current = true;
-          break;
-        case 'KeyD':
-          keys.current.right = true;
-          isMoving.current = true;
-          break;
-        case 'Space':
-          keys.current.space = true;
-          // Прыжок только если игрок на земле
-          if (isOnGround.current) {
-            setVelocity(new Vector3(velocity.x, JUMP_FORCE, velocity.z));
-            isOnGround.current = false;
-          }
-          break;
-      }
-    };
+  // Game loop
+  useFrame(() => {
+    if (isGameOver || !playerRef.current) return;
     
-    const handleKeyUp = (e: KeyboardEvent) => {
-      switch(e.code) {
-        case 'KeyW':
-          keys.current.backward = false;
-          if (!keys.current.forward && !keys.current.left && !keys.current.right) isMoving.current = false;
-          break;
-        case 'KeyS':
-          keys.current.forward = false;
-          if (!keys.current.backward && !keys.current.left && !keys.current.right) isMoving.current = false;
-          break;
-        case 'KeyA':
-          keys.current.left = false;
-          if (!keys.current.forward && !keys.current.backward && !keys.current.right) isMoving.current = false;
-          break;
-        case 'KeyD':
-          keys.current.right = false;
-          if (!keys.current.forward && !keys.current.left && !keys.current.backward) isMoving.current = false;
-          break;
-        case 'Space':
-          keys.current.space = false;
-          break;
-      }
-    };
-    
-    // Обработка стрельбы
-    const handleShoot = () => {
-      if (!isLocked || isGameOver) return;
+    // Handle jumping
+    if (isJumping.current) {
+      jumpFrame.current++;
+      const jumpProgress = jumpFrame.current / JUMP_DURATION;
+      playerRef.current.position.y = 0.5 + JUMP_HEIGHT * Math.sin(Math.PI * jumpProgress);
       
-      const now = Date.now();
-      lastShootTime.current = now;
-      
-      // Воспроизводим звук выстрела, если передан соответствующий обработчик
-      if (onShoot) {
-        onShoot();
-      }
-      
-      // Создаем новую пулю
-      const bulletId = uuidv4();
-      const bulletPosition = new Vector3(camera.position.x, camera.position.y, camera.position.z);
-      
-      // Направление пули совпадает с направлением камеры
-      const bulletDirection = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-      
-      console.log(`Выстрел! ID: ${bulletId.substring(0, 8)}, Позиция: ${bulletPosition.x.toFixed(2)}, ${bulletPosition.y.toFixed(2)}, ${bulletPosition.z.toFixed(2)}`);
-      
-      // Добавляем пулю в список с временной меткой создания
-      setBullets(prev => [...prev, { 
-        id: bulletId, 
-        position: bulletPosition, 
-        direction: bulletDirection, 
-        hasHit: false,
-        createdAt: Date.now()
-      }]);
-      
-      // Создаем вспышку выстрела
-      const muzzleFlashId = uuidv4();
-      // Позиция немного впереди камеры
-      const muzzlePosition = bulletPosition.clone().addScaledVector(bulletDirection, 0.6);
-      
-      // Добавляем вспышку
-      setMuzzleFlashes(prev => [...prev, { 
-        id: muzzleFlashId, 
-        position: muzzlePosition,
-        direction: bulletDirection,
-        createdAt: Date.now()
-      }]);
-    };
-    
-    const handleClick = () => {
-      handleShoot();
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('click', handleClick);
-    
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('click', handleClick);
-    };
-  }, [camera, isLocked, isGameOver, scene, onZombieHit, velocity, setVelocity, onShoot]);
-  
-  // Проверка столкновения пули с зомби
-  const checkBulletCollisions = (bullet: BulletType): BulletType => {
-    if (bullet.hasHit) return bullet; // Пуля уже попала в цель
-    
-    // Создаем raycast из текущей позиции пули в направлении ее движения
-    raycaster.current.set(bullet.position, bullet.direction);
-    // Увеличиваем дальность проверки для более легкого попадания
-    const intersects = raycaster.current.intersectObjects(scene.children, true);
-    
-    for (let i = 0; i < intersects.length; i++) {
-      const intersect = intersects[i];
-      // Проверяем, не попала ли пуля в какой-либо объект
-      // Увеличиваем расстояние проверки с 0.5 до 1.5 для более легкого попадания
-      if (intersect.distance < 1.5) { // Увеличенная зона попадания
-        // Проверяем, попали ли в зомби
-        const parent = intersect.object.parent;
-        
-        // Проверяем, является ли объект головой зомби
-        const isHeadshot = intersect.object.userData && intersect.object.userData.isHead === true;
-        
-        if (parent && parent.userData && parent.userData.isZombie) {
-          // Вызываем функцию для воспроизведения звука ранения зомби
-          if (onZombieHurt) {
-            // Use setTimeout to defer the state update
-            setTimeout(() => onZombieHurt(), 0);
-          }
-          
-          // Вызываем функцию нанесения урона зомби из компонента Zombies
-          if (scene.userData.damageZombie) {
-            scene.userData.damageZombie(parent.userData.id, false, isHeadshot);
-          }
-          
-          console.log(`Пуля ${bullet.id.substring(0, 8)} попала в зомби! ${isHeadshot ? 'ХЕДШОТ!' : ''}`);
-          
-          // Помечаем пулю как попавшую в цель
-          return { ...bullet, hasHit: true };
-        }
-        
-        console.log(`Пуля ${bullet.id.substring(0, 8)} попала в препятствие!`);
-        
-        // Попали в препятствие (не зомби)
-        return { ...bullet, hasHit: true };
+      if (jumpFrame.current >= JUMP_DURATION) {
+        isJumping.current = false;
+        jumpFrame.current = 0;
+        playerRef.current.position.y = 0.5; // Reset to ground level
       }
     }
     
-    return bullet; // Пуля не попала ни в какой объект
-  };
-  
-  // Основной игровой цикл
-  useFrame((_, delta) => {
-    if (isGameOver) return;
-    
-    // Применяем гравитацию к скорости по Y
-    const newVelocityY = velocity.y - GRAVITY * delta;
-    
-    // Вектор направления из поворота камеры
-    const direction = new Vector3();
-    const frontVector = new Vector3(0, 0, 1).applyQuaternion(camera.quaternion);
-    const sideVector = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    
-    // Обновление направления в зависимости от нажатых клавиш
-    direction
-      .subVectors(new Vector3(), frontVector)
-      .multiplyScalar(Number(keys.current.backward) - Number(keys.current.forward))
-      .addScaledVector(sideVector, Number(keys.current.right) - Number(keys.current.left))
-      .normalize();
+    // Handle ducking
+    if (isDucking.current) {
+      duckFrame.current++;
       
-    // Обновление скорости и позиции
-    let newPosition = position.clone();
-    
-    // Обновляем горизонтальное движение
-    if (keys.current.forward || keys.current.backward || keys.current.left || keys.current.right) {
-      const horizontalVelocity = new Vector3(
-        direction.x * MOVEMENT_SPEED * delta,
-        0,
-        direction.z * MOVEMENT_SPEED * delta
-      );
-      
-      newPosition.add(horizontalVelocity);
-    }
-    
-    // Обновляем вертикальное движение (прыжок/падение)
-    newPosition.y += newVelocityY * delta;
-    
-    // Проверка столкновения с землей
-    if (newPosition.y <= 1) { // Y позиция земли
-      newPosition.y = 1;
-      isOnGround.current = true;
-      setVelocity(new Vector3(velocity.x, 0, velocity.z));
-    } else {
-      isOnGround.current = false;
-      setVelocity(new Vector3(velocity.x, newVelocityY, velocity.z));
-    }
-    
-    // Обновление позиции с учетом коллизий
-    // В простом случае не даем выйти за пределы арены
-    const arenaSize = 24;  // Чуть меньше размера арены (25) для учета размера игрока
-    newPosition.x = Math.max(-arenaSize, Math.min(arenaSize, newPosition.x));
-    newPosition.z = Math.max(-arenaSize, Math.min(arenaSize, newPosition.z));
-    
-    setPosition(newPosition);
-    
-    // Обновляем позицию игрока для мини-карты сразу после обновления основной позиции
-    if (setPlayerPosition) {
-      setPlayerPosition(newPosition.clone());
-    }
-    
-    // Обновление позиции камеры
-    camera.position.x = newPosition.x;
-    camera.position.y = newPosition.y + 1.6; // Высота глаз игрока
-    camera.position.z = newPosition.z;
-    
-    // Обновление пуль
-    if (bullets.length > 0) {
-      setBullets(prevBullets => {
-        const updatedBullets = prevBullets.map(bullet => {
-          // Пропускаем пули, которые уже попали в цель
-          if (bullet.hasHit) return bullet;
-          
-          // Обновляем позицию пули
-          const newBulletPosition = bullet.position.clone().addScaledVector(bullet.direction, BULLET_SPEED * delta);
-          
-          // Отладочный вывод позиции пули (только для каждой 10-й пули и каждые 0.5 секунд)
-          if (Math.random() < 0.01) {
-            console.log(`Пуля ${bullet.id.substring(0, 8)} движется: ${bullet.position.x.toFixed(2)}, ${bullet.position.y.toFixed(2)}, ${bullet.position.z.toFixed(2)} -> ${newBulletPosition.x.toFixed(2)}, ${newBulletPosition.y.toFixed(2)}, ${newBulletPosition.z.toFixed(2)}`);
-          }
-          
-          const updatedBullet = {
-            ...bullet,
-            position: newBulletPosition
-          };
-          
-          // Проверяем столкновения пули с объектами
-          const bulletWithCollision = checkBulletCollisions(updatedBullet);
-          
-          // Проверяем, не вышла ли пуля за пределы арены
-          if (
-            Math.abs(newBulletPosition.x) > arenaSize + 5 ||
-            Math.abs(newBulletPosition.z) > arenaSize + 5 ||
-            newBulletPosition.y < 0 ||
-            newBulletPosition.y > 20
-          ) {
-            return { ...bulletWithCollision, hasHit: true }; // Помечаем для удаления
-          }
-          
-          return bulletWithCollision;
-        });
-        
-        return updatedBullets.filter(bullet => {
-          const bulletLifespan = 2.0; // Пуля существует 2 секунды
-          const bulletAge = (Date.now() - bullet.createdAt) / 1000;
-          
-          // Если пуля слишком старая или попала в цель, выводим отладочную информацию
-          if (bulletAge >= bulletLifespan) {
-            console.log(`Пуля ${bullet.id.substring(0, 8)} удалена: превышено время жизни (${bulletAge.toFixed(2)}s)`);
-            return false;
-          }
-          
-          if (bullet.hasHit) {
-            console.log(`Пуля ${bullet.id.substring(0, 8)} удалена: попадание`);
-            return false;
-          }
-          
-          return true;
-        });
-      });
-    }
-    
-    // Обновление вспышек выстрелов
-    if (muzzleFlashes.length > 0) {
-      setMuzzleFlashes(prevFlashes => {
-        // Удаляем вспышки через короткое время (100мс)
-        return prevFlashes.filter(flash => {
-          return Date.now() - flash.createdAt < 100;
-        });
-      });
-    }
-    
-    // Анимация оружия
-    if (gunRef.current) {
-      // Получаем текущее время
-      const now = Date.now();
-      
-      // Обновляем позицию оружия, чтобы оно всегда было перед камерой и смещено вправо
-      gunRef.current.position.set(0.3, -0.35, -0.7); // Смещаем вправо (было 0, -0.35, -0.7)
-      
-      // Плавное движение при ходьбе
-      if (isMoving.current) {
-        const walkOffset = Math.sin(now * 0.01) * 0.01;
-        gunRef.current.position.y += walkOffset;
-        gunRef.current.rotation.x = Math.sin(now * 0.01) * 0.02;
-        gunRef.current.rotation.z = Math.sin(now * 0.01) * 0.01;
+      if (duckFrame.current <= DUCK_DURATION / 2) {
+        // Duck down
+        playerRef.current.scale.y = 1 - (1 - DUCK_SCALE_Y) * (duckFrame.current / (DUCK_DURATION / 2));
+        playerRef.current.position.y = DUCK_SCALE_Y * 0.5 + (1 - playerRef.current.scale.y) * 0.25;
       } else {
-        // Плавное дыхание, когда игрок стоит на месте
-        const breathOffset = Math.sin(now * 0.001) * 0.005;
-        gunRef.current.position.y += breathOffset;
+        // Return to normal
+        playerRef.current.scale.y = DUCK_SCALE_Y + (1 - DUCK_SCALE_Y) * 
+          ((duckFrame.current - DUCK_DURATION / 2) / (DUCK_DURATION / 2));
+        playerRef.current.position.y = DUCK_SCALE_Y * 0.5 + (1 - playerRef.current.scale.y) * 0.25;
       }
       
-      // Эффект отдачи при стрельбе
-      const timeSinceLastShot = now - lastShootTime.current;
-      if (timeSinceLastShot < 150) { // Анимация отдачи длится 150мс
-        const recoilProgress = timeSinceLastShot / 150; // От 0 до 1
-        const recoilCurve = 1 - recoilProgress; // Начинается с 1 и снижается до 0
-        
-        // Отдача назад и вверх
-        gunRef.current.position.z += recoilCurve * 0.1; // Смещение назад
-        gunRef.current.rotation.x -= recoilCurve * 0.1; // Поворот вверх
+      // Ensure scale is within bounds
+      if (playerRef.current.scale.y < DUCK_SCALE_Y) playerRef.current.scale.y = DUCK_SCALE_Y;
+      if (playerRef.current.scale.y > 1) playerRef.current.scale.y = 1;
+      
+      if (duckFrame.current >= DUCK_DURATION) {
+        isDucking.current = false;
+        duckFrame.current = 0;
+        playerRef.current.scale.y = 1;
+        playerRef.current.position.y = 0.5;
       }
     }
     
-    // Передаем направление взгляда игрока
-    if (onUpdateDirection) {
-      const cameraDirection = new THREE.Vector3();
-      camera.getWorldDirection(cameraDirection);
-      onUpdateDirection(cameraDirection);
-      
-      // Если функция onShot определена, вызываем ее
-      if (onShot) {
-        onShot(playerRef.current.position.clone(), cameraDirection);
-      }
-    }
+    // Update bounding box after position/scale changes
+    playerBoundingBox.current.setFromObject(playerRef.current);
+    
+    // Check for collisions
+    checkCollisions();
   });
   
-  // Компонент MP5
-  const MP5 = () => {
-    // Создаем группу для всего оружия
-    return (
-      <group ref={gunRef} position={[0.3, -0.35, -0.7]}>
-        {/* Основной корпус автомата */}
-        <mesh position={[0, 0, 0]}>
-          <boxGeometry args={[0.08, 0.08, 0.5]} />
-          <meshStandardMaterial color="black" metalness={0.7} roughness={0.3} />
-        </mesh>
-        
-        {/* Магазин */}
-        <mesh position={[0, -0.1, 0.05]}>
-          <boxGeometry args={[0.06, 0.18, 0.12]} />
-          <meshStandardMaterial color="black" metalness={0.7} roughness={0.3} />
-        </mesh>
-        
-        {/* Ствол */}
-        <mesh position={[0, 0.01, -0.3]}>
-          <cylinderGeometry args={[0.02, 0.02, 0.2, 8]} />
-          <meshStandardMaterial color="#333" metalness={0.9} roughness={0.2} />
-        </mesh>
-        
-        {/* Рукоятка */}
-        <mesh position={[0, -0.08, 0.15]}>
-          <boxGeometry args={[0.06, 0.15, 0.08]} />
-          <meshStandardMaterial color="#222" metalness={0.5} roughness={0.5} />
-        </mesh>
-        
-        {/* Приклад */}
-        <mesh position={[0, 0, 0.3]}>
-          <boxGeometry args={[0.06, 0.06, 0.15]} />
-          <meshStandardMaterial color="#222" metalness={0.5} roughness={0.5} />
-        </mesh>
-        
-        {/* Прицел */}
-        <mesh position={[0, 0.06, 0.1]}>
-          <boxGeometry args={[0.03, 0.02, 0.08]} />
-          <meshStandardMaterial color="#333" metalness={0.8} roughness={0.2} />
-        </mesh>
-        
-        {/* Передняя рукоятка */}
-        <mesh position={[0, -0.06, -0.15]}>
-          <boxGeometry args={[0.05, 0.08, 0.05]} />
-          <meshStandardMaterial color="#222" metalness={0.5} roughness={0.5} />
-        </mesh>
-      </group>
-    );
-  };
-  
-  // Компонент вспышки выстрела
-  const MuzzleFlash = ({ position, direction }: { position: Vector3; direction: Vector3 }) => {
-    const flashRef = useRef<Mesh>(null);
+  // Check for collisions with walls
+  const checkCollisions = () => {
+    if (!playerRef.current) return;
     
-    useFrame(() => {
-      if (flashRef.current) {
-        // Всегда поворачиваем вспышку в направлении выстрела
-        flashRef.current.lookAt(position.clone().add(direction));
-        // Добавляем случайный поворот для более динамичного эффекта
-        flashRef.current.rotation.z = Math.random() * Math.PI * 2;
+    for (let i = walls.current.length - 1; i >= 0; i--) {
+      const wallGroup = walls.current[i];
+      if (wallGroup.userData.collided) continue;
+      
+      let collisionDetected = false;
+      
+      if (wallGroup.userData.type === 'yellow') { // Duck under this
+        const worldObstacleBox = wallGroup.userData.obstacleBox.clone().translate(wallGroup.position);
+        if (playerBoundingBox.current.intersectsBox(worldObstacleBox)) {
+          collisionDetected = true;
+        }
+      } else if (wallGroup.userData.type === 'white') { // Jump over/through this
+        const worldLeftBox = wallGroup.userData.leftBox.clone().translate(wallGroup.position);
+        const worldRightBox = wallGroup.userData.rightBox.clone().translate(wallGroup.position);
+        
+        if (playerBoundingBox.current.intersectsBox(worldLeftBox) || 
+            playerBoundingBox.current.intersectsBox(worldRightBox)) {
+          collisionDetected = true;
+        }
       }
-    });
-    
-    return (
-      <mesh ref={flashRef} position={position}>
-        <circleGeometry args={[0.2, 8]} />
-        <meshBasicMaterial 
-          color="orange" 
-          transparent={true}
-          opacity={0.9}
-        />
-      </mesh>
-    );
+      
+      if (collisionDetected) {
+        wallGroup.userData.collided = true;
+        // Game over is handled by parent component
+        break;
+      }
+      
+      // Scoring: if car passes the wall's origin successfully
+      if (!wallGroup.userData.passed && wallGroup.position.z > playerRef.current.position.z + 1.5) {
+        score.current++;
+        onScoreChange(score.current);
+        wallGroup.userData.passed = true;
+      }
+    }
   };
   
   return (
-    <>
-      <mesh ref={playerRef} position={position} visible={false}>
-        <capsuleGeometry args={[0.5, 1, 1, 16]} />
-        <meshStandardMaterial wireframe color="red" />
-      </mesh>
-      
-      {/* Добавляем MP5 как дочерний элемент камеры */}
-      <primitive object={camera}>
-        <MP5 />
-      </primitive>
-      
-      {/* Рендеринг всех пуль */}
-      {bullets.map(bullet => (
-        <Bullet 
-          key={bullet.id} 
-          position={bullet.position} 
-          direction={bullet.direction} 
-        />
-      ))}
-      
-      {/* Рендеринг вспышек выстрелов */}
-      {muzzleFlashes.map(flash => (
-        <MuzzleFlash
-          key={flash.id}
-          position={flash.position}
-          direction={flash.direction}
-        />
-      ))}
-    </>
+    <mesh
+      ref={playerRef}
+      position={[0, 0.5, 0]}
+      castShadow
+    >
+      <boxGeometry args={[1.5, 1, 3]} />
+      <meshStandardMaterial color="#FF9900" metalness={0.3} roughness={0.6} />
+    </mesh>
   );
 };
 
